@@ -1,0 +1,205 @@
+// Arranque, navegación y contexto compartido por las pantallas.
+
+import { today as todayISO, fmtLong, isoWeek } from './dates.js';
+import { FILES, currentPlan } from './model.js';
+import { analyze } from './engine/analysis.js';
+import { Store } from './data/store.js';
+import { GitHubBackend, AuthError } from './data/github.js';
+import { LocalBackend } from './data/local.js';
+import { $, $$, esc, toast, initSheet, icon } from './ui/ui.js';
+import * as setup from './screens/setup.js';
+import * as hoy from './screens/hoy.js';
+import * as control from './screens/control.js';
+import * as progreso from './screens/progreso.js';
+import * as plan from './screens/plan.js';
+import { openSettings } from './screens/settings.js';
+import { seedDemo } from './screens/setup.js';
+
+const SCREENS = { hoy, domingo: control, progreso, plan };
+const TITLES = { hoy: 'Hoy', domingo: 'Control semanal', progreso: 'Progreso', plan: 'Plan' };
+
+// ---------- ajustes locales (por dispositivo) ----------
+export function loadSettings() {
+  try { return JSON.parse(localStorage.getItem('settings') || 'null'); } catch { return null; }
+}
+export function saveSettings(s) {
+  try { s ? localStorage.setItem('settings', JSON.stringify(s)) : localStorage.removeItem('settings'); } catch { /* sin almacenamiento */ }
+}
+
+// ---------- contexto ----------
+const ctx = {
+  store: null,
+  settings: null,
+  state: { tab: 'hoy', hoySub: 'dia', date: todayISO() },
+  _analysis: null,
+  today: todayISO,
+  data() {
+    return { config: this.store.get(FILES.config) || {}, plan: this.store.get(FILES.plan) || { versions: [] }, days: this.store.allDays() };
+  },
+  analysis() {
+    if (!this._analysis) this._analysis = analyze(this.data(), { today: todayISO() });
+    return this._analysis;
+  },
+  go(tab) { go(tab); },
+  render() { render(); },
+};
+
+function backendFor(s) {
+  return s.mode === 'demo' ? new LocalBackend() : new GitHubBackend({ owner: s.owner, repo: s.repo, token: s.token });
+}
+
+// ---------- ciclo de vida ----------
+export async function start(settings) {
+  ctx.settings = settings;
+  ctx.store = new Store(backendFor(settings), { ns: settings.mode === 'demo' ? 'demo' : `${settings.owner}/${settings.repo}` });
+  const store = ctx.store;
+  store.addEventListener('change', () => {
+    ctx._analysis = null;
+    // no repintar mientras el usuario escribe
+    if (!document.activeElement?.matches('input, textarea, select')) scheduleRender();
+  });
+  store.addEventListener('status', (e) => paintSync(e.detail.status, e.detail.error));
+
+  const hadCache = await store.loadCache();
+  if (settings.mode === 'demo') await seedDemo(store);
+  if (hadCache) render();
+  try {
+    await store.sync();
+    if (!store.get(FILES.config)) await store.ensureStructure();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      toast('El token no es válido o ha caducado');
+      paintSync('error', e);
+    } else paintSync('offline', e);
+  }
+  ctx._analysis = null;
+  render();
+}
+
+let renderQueued = false;
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
+function go(tab) {
+  ctx.state.tab = tab;
+  ctx.store?.flush();
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+function render() {
+  if (!ctx.store) return;
+  const { tab } = ctx.state;
+  $('#tabs').hidden = false;
+  $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.go === tab));
+  $('#title').textContent = TITLES[tab];
+  $('#eyebrow').textContent = fmtLong(todayISO());
+  const v = currentPlan(ctx.store.get(FILES.plan));
+  const phase = [v?.phase && `Fase ${v.phase}`, v?.micro && `Micro ${v.micro}`, `Semana ${isoWeek(todayISO())}`].filter(Boolean).join(' · ');
+  $('#phase').hidden = false;
+  $('#phaseTxt').textContent = phase;
+  $('#pip').hidden = !control.isDue(ctx);
+  const main = $('#main');
+  const screen = SCREENS[tab];
+  main.innerHTML = screen.render(ctx);
+  screen.bind?.(main, ctx);
+}
+
+function paintSync(status, err) {
+  const el = $('#sync');
+  const label = { idle: 'Guardado', pending: 'Pendiente', saving: 'Guardando…', error: 'Error', offline: 'Sin conexión' }[status] || '';
+  el.hidden = false;
+  el.className = `sync ${status}`;
+  el.querySelector('span').textContent = label;
+  el.title = err ? String(err.message || err) : '';
+}
+
+// ---------- tema ----------
+const THEMES = ['auto', 'light', 'dark'];
+export function getTheme() {
+  try { return localStorage.getItem('theme') || 'auto'; } catch { return 'auto'; }
+}
+export function setTheme(t) {
+  try { localStorage.setItem('theme', t); } catch { /* */ }
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  paintTheme();
+  if (ctx.store) render();
+}
+function effectiveDark() {
+  const t = getTheme();
+  return t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function paintTheme() {
+  const dark = effectiveDark();
+  const b = $('#themeBtn');
+  b.innerHTML = dark ? icon.sun : icon.moon;
+  b.setAttribute('aria-label', dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro');
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0E1011' : '#F4F2EC');
+}
+
+// ---------- actualizaciones (service worker) ----------
+function initServiceWorker() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    const offer = (w) => {
+      if (document.querySelector('.banner-update')) return;
+      const el = document.createElement('div');
+      el.className = 'banner-update';
+      el.innerHTML = `<span>Nueva versión disponible</span><button type="button">Actualizar</button>`;
+      el.querySelector('button').addEventListener('click', async () => {
+        await ctx.store?.flush();
+        w.postMessage('skipWaiting');
+      });
+      document.body.appendChild(el);
+    };
+    if (reg.waiting) offer(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
+    });
+    setInterval(() => reg.update(), 60 * 60 * 1000);
+  });
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
+}
+
+// ---------- init ----------
+function init() {
+  // Errores visibles: sin consola en el móvil, mejor verlos en pantalla.
+  const showErr = (m) => { console.error(m); toast(`Error: ${String(m).slice(0, 140)}`); document.body.dataset.error = String(m); };
+  window.addEventListener('error', (e) => showErr(e.message));
+  window.addEventListener('unhandledrejection', (e) => showErr(e.reason?.stack || e.reason?.message || e.reason));
+  initSheet();
+  paintTheme();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintTheme);
+  $('#themeBtn').addEventListener('click', () => setTheme(effectiveDark() ? 'light' : 'dark'));
+  $('#settingsBtn').addEventListener('click', () => ctx.store && openSettings(ctx, { saveSettings, setTheme, getTheme, THEMES }));
+  $$('#tabs button').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') ctx.store?.flush(); });
+  window.addEventListener('online', () => ctx.store?.flush());
+  initServiceWorker();
+
+  // Atajos de URL: #demo abre el modo demo; #hoy, #domingo, #progreso, #plan abren esa pestaña.
+  const hash = location.hash.slice(1).split('/');
+  if (hash[0] === 'demo' && !loadSettings()) saveSettings({ mode: 'demo' });
+  const tabFromHash = hash.find((h) => SCREENS[h]);
+  if (tabFromHash) ctx.state.tab = tabFromHash;
+
+  const s = loadSettings();
+  if (s) start(s);
+  else {
+    $('#title').textContent = 'Recomp';
+    $('#eyebrow').textContent = fmtLong(todayISO());
+    const main = $('#main');
+    main.innerHTML = setup.render();
+    setup.bind(main, { onReady: (settings) => { saveSettings(settings); start(settings); } });
+  }
+}
+
+init();
+
+export { ctx, esc };

@@ -1,0 +1,46 @@
+# Registro de decisiones
+
+Formato: fecha · decisión · motivo · alternativas descartadas.
+
+| # | Fecha | Decisión | Motivo | Descartado |
+|---|---|---|---|---|
+| 1 | 2026-09-27 | PWA estática + GitHub (repo app público + repo datos privado) | Coste 0, sin infraestructura, versionado gratis, legible por IA, buena UX móvil | Apps Script, Google APIs+OAuth, Cloudflare, app nativa |
+| 2 | 2026-09-27 | Sin framework ni compilación | La app debe funcionar años sin mantenimiento | React/Vite |
+| 3 | 2026-09-27 | ~~Un solo `data.json`~~ → sustituida por #31 | | |
+| 4 | 2026-09-27 | Guardar solo lo medido, derivar el resto | Las plantillas Excel se rompen al guardar derivados (`#VALOR!`, diferencias erróneas) | Guardar % graso, medias |
+| 5 | 2026-09-27 | Dieta y rutina como datos editables, no PDFs | El usuario es su propio preparador y cambia el plan a menudo | PDFs como recurso |
+| 6 | 2026-09-27 | Planes versionados (snapshot completo) + motivo | Trazabilidad "qué cambié, cuándo, por qué y qué efecto tuvo" | Eventos manuales |
+| 7 | 2026-09-27 | Control semanal + revisión = un único recorrido de domingo | Cliente y preparador son la misma persona | Pantallas separadas |
+| 8 | 2026-09-27 | IA vía conector GitHub de claude.ai + `resumen.md`; plan B copiar/pegar | Sin MCP propio ni infraestructura | MCP propio, RAG |
+| 9 | 2026-09-27 | Kcal diarias opcionales; por defecto se asume el plan | Permite TDEE adaptativo sin exigir contar calorías | Contar todo / no registrar kcal |
+| 10 | 2026-09-27 | No multi-cliente | Exigiría backend con autenticación | Supabase, Firebase |
+| 11 | 2026-09-27 | Tendencia de peso con Kalman nivel+pendiente (EMA temporal de respaldo) | Sin retraso, maneja huecos, da pendiente+varianza para el TDEE | Media 7 días, EMA α=0,1 |
+| 12 | 2026-09-27 | TDEE adaptativo con suavizado bayesiano y ρ según composición (acotado 5.500–8.500) | Estado del arte (MacroFactor V3, Hall/Forbes) | 7.700 kcal/kg fijo, fórmulas estáticas |
+| 13 | 2026-09-27 | Simulación con modelo dinámico de Hall (ε≈24 kcal/kg/día) | La regla estática sobreestima ~2× a largo plazo | Regla 3.500 kcal/lb |
+| 14 | 2026-09-27 | Métrica principal de composición = suma de pliegues; %G como rango secundario | Dispersión entre ecuaciones de ~11–28 % para una misma persona | %G como número único |
+| 15 | 2026-09-27 | Cambios marcados como "reales" solo si superan el MDC | Evita sobre-interpretar ruido de medida | Mostrar toda variación |
+| 16 | 2026-09-27 | Autorregulación estilo RP (agujetas 1–4, rendimiento 1–4) con tabla de reglas | Reglas publicadas e implementables; rendimiento como señal principal | Escala 0–3 ×4 de la plantilla |
+| 17 | 2026-09-27 | Volumen fraccional (directo 1, indirecto 0,5) | Pelland 2025: mejor predictor | Contar solo directas |
+| 18 | 2026-09-27 | e1RM = Epley con reps + RIR, solo RPE ≥ 7 | Precisión en 5–15 reps; RIR fiable cerca del fallo | Brzycki, e1RM sin RPE |
+| 19 | 2026-09-27 | RMR inicial: Tinsley/Cunningham (con FFM) o ten Haaf; no Mifflin | Mifflin infravalora en musculados | Mifflin-St Jeor, Harris-Benedict |
+| 20 | 2026-09-27 | 4 pestañas: Hoy · Domingo · Progreso · Plan | Control y revisión fusionados (decisión #7) | 5 pestañas |
+| 21 | 2026-09-27 | Registro de comidas por alimento y gramos, con totales por comida y día frente al objetivo del día (entreno/descanso) | El usuario quiere controlar macros reales, no solo porciones | Registro solo por porciones |
+| 22 | 2026-09-27 | Base de alimentos **estática** (`alimentos.json`) generada una vez desde CIQUAL 2025 (ANSES, 3.484 alimentos, licencia abierta Etalab) y traducida al español; vive en el repo de la app | Gratis, sin conexión, búsqueda instantánea, licencia reutilizable | BEDCA (no reutilizable), API en tiempo real, USDA (nombres en inglés, alimentos americanos) |
+| 23 | 2026-09-27 | Alimentos propios y recetas en `data.json`; entrada manual de macros siempre disponible | Cubre envasados y platos propios sin depender de terceros | Open Food Facts obligatorio (queda como mejora opcional: escáner de código de barras) |
+| 24 | 2026-09-27 | Añadir productos de supermercado españoles desde **Open Food Facts** (licencia ODbL): subconjunto España con tabla nutricional completa, filtrado por tiendas/marcas habituales (Mercadona/Hacendado, Carrefour, Lidl, Aldi, Lupa). Estático, en el repo de la app, carga diferida por fragmentos | Legal y abierto; conteo sep 2026 con nutrición completa: Mercadona ~8.800, Lidl ~1.600, Aldi ~900, Lupa ~70 (Carrefour no medido: límite de peticiones) | Scraping de webs de supermercados (condiciones de uso, bloqueos, sin datos estructurados) |
+| 25 | 2026-09-27 | Escáner de código de barras: busca primero en la base local; si no está, consulta en línea a Open Food Facts; si tampoco, alta manual (queda como alimento propio) | Cubre la cola larga sin romper el funcionamiento sin conexión | Solo manual |
+| 26 | 2026-09-27 | Regeneración de la base con un script (`tools/build-foods`); opcional GitHub Action mensual | La base "estática" puede refrescarse sin mantenimiento manual | Base congelada para siempre |
+| 27 | 2026-09-27 | Amplía #24: **todos** los productos vendidos en España con tabla nutricional (no una lista de súper). Se genera desde el volcado masivo de Open Food Facts, no desde su API (que limita peticiones) | El usuario compra en cualquier súper; la búsqueda debe encontrar "patata mercadona cocida bote" | Lista cerrada de supermercados |
+| 28 | 2026-09-27 | Buscador local de texto libre: sin acentos, palabras en cualquier orden, prefijos ("coc" → cocida), sinónimos de tienda↔marca blanca (mercadona→Hacendado/Deliplus, lidl→Milbona…) y de formato (bote↔frasco↔conserva). Orden: tus frecuentes > coincidencia de marca/tienda > resto | Encontrar el producto escribiendo como se habla | Búsqueda exacta por nombre |
+| 29 | 2026-09-27 | Las kcal del día salen del registro de comidas. Un día sin registrar o a medias **se asume según el plan** (no se cuenta lo parcial); el domingo se confirma la adherencia de esos días | No registrar no significa comer mal; evita hundir el TDEE por olvidos | Contar lo parcial como ingesta total |
+| 30 | 2026-09-27 | Fases: MVP → Comidas → Entreno detallado → resto | Entregar valor pronto; comidas es el módulo más grande | Todo a la vez |
+| 31 | 2026-09-28 | Datos en varios JSON: `config`, `plan`, `exercises`, `foods`, `events`, `labs` y `days/AAAA-MM` (uno por mes) | Con comidas hay varias escrituras al día; un guardado no debe subir todo el histórico | Un solo `data.json` (#3), fichero por día |
+| 32 | 2026-09-28 | Pestaña Hoy con subpestañas Día · Comidas · Entreno | Evitar el scroll infinito; ir directo a lo que interesa | Tarjetas resumen con pantallas de detalle, 6 pestañas |
+| 33 | 2026-09-28 | Base local = ~25.000 productos más escaneados en España + genéricos; cola larga en línea (API OFF) desde el móvil; lo usado se guarda como propio | "Todos los productos" = decenas de MB en el móvil; la popularidad cubre la mayoría de búsquedas | Todos los productos en local (#27) |
+| 34 | 2026-09-28 | Objetivo de ritmo por defecto según % graso (0,25–1,0 %/sem); editable | Con 13–16 % y prioridad de conservar músculo, 1 %/sem es excesivo | 0,5–1,0 fijo |
+| 35 | 2026-09-28 | `resumen.md` solo el domingo y al cambiar el plan; comprobación de versión de la PWA al abrir | Menos commits; las actualizaciones no llegan solas con caché | Regenerar en cada guardado |
+| 36 | 2026-09-28 | Domingo: pasos saltables; autorregulación por defecto en "normal" | 20 toques semanales obligatorios es tedio | Todo obligatorio |
+| 37 | 2026-09-28 | Reloj: sin integración en el MVP; pasos/sueño/pulso tecleados desde el reloj. % graso BIA del reloj como métrica semanal opcional | Health Connect solo es accesible desde apps nativas; una automatización Android es posible pero no verificada | App nativa companion |
+| 39 | 2026-09-28 | Guardado optimista: la UI se actualiza al instante y se sincroniza en segundo plano. Los cambios seguidos sobre un mismo fichero se agrupan en un solo commit (espera de unos segundos o al cambiar de pantalla), con mensaje generado ("Desayuno 28 sep: 4 alimentos") | Cada guardado es un commit vía API; sin agrupar habría esperas y un historial ruidoso | Commit por cada toque; esperar a la respuesta de GitHub |
+| 40 | 2026-09-27 | MVP construido: PWA sin compilación, fuente autoalojada, CSP estricta (sin scripts de terceros), modo demo con backend local, errores visibles en pantalla | Mantenimiento cero y seguridad del token | Framework, CDN |
+| 41 | 2026-09-27 | En el MVP los ejercicios de la rutina se identifican por nombre; el catálogo con músculos llega en la fase 3 | Menos fricción al editar la rutina desde el móvil | Catálogo obligatorio desde el inicio |

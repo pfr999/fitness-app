@@ -1,0 +1,16 @@
+#!/bin/sh
+# Protección: este repo solo puede subir a la cuenta personal pfr999 y con la identidad personal.
+remote_url="$2"
+case "$remote_url" in
+  git@github-personal:pfr999/*) ;;
+  *) echo "✋ pre-push: destino no permitido ($remote_url). Solo git@github-personal:pfr999/*" >&2; exit 1 ;;
+esac
+allowed="23028805+pfr999@users.noreply.github.com"
+zero=0000000000000000000000000000000000000000
+while read local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then range="$local_sha"; else range="$remote_sha..$local_sha"; fi
+  bad=$(git log --format='%h %ae %ce' $range | awk -v ok="$allowed" '$2!=ok || $3!=ok')
+  if [ -n "$bad" ]; then echo "✋ pre-push: commits con identidad no personal:" >&2; echo "$bad" >&2; exit 1; fi
+done
+exit 0

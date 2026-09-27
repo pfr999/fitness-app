@@ -1,0 +1,224 @@
+// Pantalla Hoy: subpestañas Día · Comidas · Entreno.
+
+import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, icon } from '../ui/ui.js';
+import { ring } from '../ui/charts.js';
+import { addDays, fmtShort, fmtLong, range } from '../dates.js';
+import { FILES, planFor, kcalTarget } from '../model.js';
+import { isDue } from './control.js';
+
+const SUBS = [['dia', 'Día'], ['comidas', 'Comidas'], ['entreno', 'Entreno']];
+
+export function render(ctx) {
+  const sub = ctx.state.hoySub;
+  const seg = `<div class="seg" id="hoySeg" style="margin-bottom:12px">${SUBS.map(([k, l]) => `<button data-v="${k}" class="${k === sub ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const body = sub === 'comidas' ? renderMeals(ctx) : sub === 'entreno' ? renderTraining(ctx) : renderDay(ctx);
+  return seg + dateNav(ctx) + body;
+}
+
+export function bind(root, ctx) {
+  bindSeg(root, '#hoySeg', (v) => { ctx.state.hoySub = v; ctx.render(); });
+  $('#prevDay', root)?.addEventListener('click', () => { ctx.state.date = addDays(ctx.state.date, -1); ctx.render(); });
+  $('#nextDay', root)?.addEventListener('click', () => { if (ctx.state.date < ctx.today()) { ctx.state.date = addDays(ctx.state.date, 1); ctx.render(); } });
+  $('#toToday', root)?.addEventListener('click', () => { ctx.state.date = ctx.today(); ctx.render(); });
+  if (ctx.state.hoySub === 'dia') bindDay(root, ctx);
+  if (ctx.state.hoySub === 'entreno') bindTraining(root, ctx);
+}
+
+function dateNav(ctx) {
+  const d = ctx.state.date, isToday = d === ctx.today();
+  return `<div class="row" style="margin:-2px 0 12px">
+    <button class="mini" id="prevDay" aria-label="Día anterior">${icon.back}</button>
+    <div style="text-align:center"><b style="font-size:14.5px">${isToday ? 'Hoy' : esc(fmtLong(d))}</b>${isToday ? '' : `<div><button class="link" id="toToday" style="padding:2px 0">Volver a hoy</button></div>`}</div>
+    <button class="mini" id="nextDay" aria-label="Día siguiente" ${isToday ? 'disabled style="opacity:.35"' : ''}>${icon.chevron}</button>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Día
+function renderDay(ctx) {
+  const date = ctx.state.date;
+  const day = ctx.store.day(date);
+  const prev = ctx.store.day(addDays(date, -1));
+  const a = ctx.analysis();
+  const L = a.latest || {};
+  const v = planFor(ctx.store.get(FILES.plan), date);
+  const rate = L.rate ? `${fmt(L.rate.kgWeek, 2)}/sem` : '—';
+  const rateHint = !L.rateReliable && L.dataDays ? `<div class="hint">El ritmo es fiable a partir de 14 días de datos (llevas ${L.dataDays}).</div>` : '';
+  const due = date === ctx.today() && isDue(ctx);
+  const tr = day.trained === true ? 'Sí' : day.trained === false ? 'Descanso' : '—';
+  const supp = v?.supplements || [];
+  const taken = new Set(day.supplements_taken || []);
+
+  return `
+  ${due ? `<button class="sunday" id="goControl"><span class="ic">${icon.sunday}</span><div><b>Toca control semanal</b><span>Medidas, fotos y revisión · unos 5 min</span></div><span class="go">${icon.chevron}</span></button>` : ''}
+  <div class="card hero">
+    <div class="lbl"><label for="wIn">Peso en ayunas</label><span class="muted">${prev.weight != null ? `Día anterior ${fmt(prev.weight)}` : ''}</span></div>
+    <div class="weight"><input id="wIn" inputmode="decimal" enterkeyhint="done" placeholder="—" value="${day.weight != null ? fmt(day.weight) : ''}" aria-label="Peso en kilos"><span class="u">kg</span></div>
+    <div class="stats3">
+      <div><div class="k">Tendencia</div><div class="v num">${L.trend ? fmt(L.trend.level) + ' kg' : '—'}</div></div>
+      <div><div class="k">Ritmo</div><div class="v num ${L.rate && L.rate.kgWeek < 0 ? 'up' : ''}">${rate}</div></div>
+      <div><div class="k">Gasto est.</div><div class="v num">${L.tdeeReliable ? fmtK(L.tdee.E) : '—'}</div></div>
+    </div>
+    ${rateHint}
+    <button class="btn primary" style="margin-top:16px" id="saveW">${icon.check}Guardar</button>
+  </div>
+
+  <div class="quick">
+    <button class="qk ${day.steps != null ? 'done' : ''}" data-open="daily"><span class="k">Pasos</span><span class="v num ${day.steps == null ? 'empty' : ''}">${day.steps != null ? fmtK(day.steps) : '+ Añadir'}</span></button>
+    <button class="qk ${day.sleep_h != null ? 'done' : ''}" data-open="daily"><span class="k">Sueño</span><span class="v num ${day.sleep_h == null ? 'empty' : ''}">${day.sleep_h != null ? fmt(day.sleep_h) + ' h' : '+ Añadir'}</span></button>
+    <button class="qk ${day.trained != null ? 'done' : ''}" id="toggleTrain"><span class="k">Entreno</span><span class="v ${day.trained == null ? 'empty' : ''}">${tr}</span></button>
+    <button class="qk ${day.note || day.wellness ? 'done' : ''}" data-open="daily"><span class="k">Más</span><span class="v empty">${day.note || day.wellness ? 'Editar' : 'Añadir'}</span></button>
+  </div>
+
+  ${supp.length ? `<div class="card"><div class="ch"><h2>Suplementos y medicación</h2><span class="aux">${[...taken].filter((n) => supp.some((s) => s.name === n)).length}/${supp.length}</span></div>
+    ${supp.map((s) => `<label class="chk"><input type="checkbox" data-supp="${esc(s.name)}" ${taken.has(s.name) ? 'checked' : ''}><div><b>${esc(s.name)}</b><small>${esc([s.dose, s.timing].filter(Boolean).join(' · '))}</small></div>${s.kind === 'medication' ? '<span class="badge b t">Medicación</span>' : ''}</label>`).join('')}
+  </div>` : ''}
+  ${day.note ? `<div class="card flat"><div class="muted small" style="font-weight:700;margin-bottom:4px">Nota</div><div style="white-space:pre-wrap">${esc(day.note)}</div></div>` : ''}`;
+}
+
+function bindDay(root, ctx) {
+  const date = ctx.state.date;
+  $('#goControl', root)?.addEventListener('click', () => ctx.go('domingo'));
+  const save = () => {
+    const raw = $('#wIn', root).value;
+    const w = num(raw);
+    if (raw.trim() && (w == null || w < 25 || w > 350)) return toast('Peso no válido');
+    ctx.store.updateDay(date, (d) => { if (w == null) delete d.weight; else d.weight = w; }, w == null ? `Borra peso ${fmtShort(date)}` : `Peso ${fmtShort(date)}: ${fmt(w)} kg`);
+    toast(w == null ? 'Peso borrado' : `${fmt(w)} kg guardado`);
+    $('#wIn', root).blur();
+  };
+  $('#saveW', root).addEventListener('click', save);
+  $('#wIn', root).addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  $('#toggleTrain', root).addEventListener('click', () => {
+    const cur = ctx.store.day(date).trained;
+    const next = cur === true ? false : cur === false ? undefined : true;
+    ctx.store.updateDay(date, (d) => { if (next === undefined) delete d.trained; else d.trained = next; }, `Entreno ${fmtShort(date)}: ${next === true ? 'sí' : next === false ? 'descanso' : 'sin marcar'}`);
+    ctx.render();
+  });
+  $$('[data-open="daily"]', root).forEach((b) => b.addEventListener('click', () => dailySheet(ctx, date)));
+  $$('[data-supp]', root).forEach((c) =>
+    c.addEventListener('change', () => {
+      const name = c.dataset.supp;
+      ctx.store.updateDay(date, (d) => {
+        const s = new Set(d.supplements_taken || []);
+        c.checked ? s.add(name) : s.delete(name);
+        d.supplements_taken = s.size ? [...s] : undefined;
+      }, `Suplementos ${fmtShort(date)}`);
+    }),
+  );
+}
+
+function dailySheet(ctx, date) {
+  const d = ctx.store.day(date);
+  const w = d.wellness || {};
+  const scale = (id, val) => `<div class="scale acc" data-scale="${id}">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-v="${n}" class="${val === n ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  openSheet(`<h3>Registro · ${esc(fmtShort(date))}</h3>
+    <div class="stack" style="margin-top:12px">
+      <div class="g2">
+        <div class="field"><label for="dSteps">Pasos</label><input class="inp" id="dSteps" inputmode="numeric" value="${d.steps != null ? fmtK(d.steps) : ''}" placeholder="10.000"></div>
+        <div class="field"><label for="dSleep">Sueño (h)</label><input class="inp" id="dSleep" inputmode="decimal" value="${d.sleep_h != null ? fmt(d.sleep_h) : ''}" placeholder="7,5"></div>
+      </div>
+      <div class="field"><label for="dRhr">Pulso en reposo (lpm)</label><input class="inp" id="dRhr" inputmode="numeric" value="${d.rhr ?? ''}" placeholder="58"></div>
+      <div class="field"><label>Energía (1 baja · 5 alta)</label>${scale('energy', w.energy)}</div>
+      <div class="field"><label>Fatiga (1 poca · 5 mucha)</label>${scale('fatigue', w.fatigue)}</div>
+      <div class="field"><label for="dNote">Nota</label><textarea class="inp" id="dNote" placeholder="Lo que quieras recordar de hoy">${esc(d.note || '')}</textarea></div>
+      <button class="btn primary" id="dSave">Guardar</button>
+    </div>`, {
+    bind: (sh) => {
+      $$('.scale', sh).forEach((s) => s.addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        const was = b.classList.contains('on');
+        $$('button', s).forEach((x) => x.classList.remove('on'));
+        if (!was) b.classList.add('on');
+      }));
+      $('#dSave', sh).addEventListener('click', () => {
+        const val = (sel) => $(`[data-scale="${sel}"] .on`, sh)?.dataset.v;
+        ctx.store.updateDay(date, (x) => {
+          x.steps = int($('#dSteps', sh).value) ?? undefined;
+          x.sleep_h = num($('#dSleep', sh).value) ?? undefined;
+          x.rhr = int($('#dRhr', sh).value) ?? undefined;
+          x.wellness = { energy: val('energy') ? +val('energy') : undefined, fatigue: val('fatigue') ? +val('fatigue') : undefined };
+          x.note = $('#dNote', sh).value.trim() || undefined;
+        }, `Registro ${fmtShort(date)}`);
+        closeSheet();
+        toast('Guardado');
+        ctx.render();
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------- Comidas
+function renderMeals(ctx) {
+  const date = ctx.state.date;
+  const v = planFor(ctx.store.get(FILES.plan), date);
+  if (!v) return '';
+  const day = ctx.store.day(date);
+  const kcal = kcalTarget(v, day.trained);
+  const dt = v.diet;
+  const label = day.trained === true ? 'Día de entreno' : day.trained === false ? 'Día de descanso' : 'Entreno sin marcar';
+  const meals = dt.meals || [];
+  return `<div class="card">
+      <div class="ch"><h2>Objetivo del día</h2><span class="badge ${day.trained === true ? 'g' : 'n'}">${label}</span></div>
+      <div class="ring-wrap">
+        ${ring({ value: 0, max: kcal, label: fmtK(kcal), sub: 'kcal objetivo' })}
+        <div class="macros">
+          <div class="mac"><div class="row"><b>Proteína</b><span>${fmtK(dt.protein_g)} g</span></div><div class="bar"><i style="width:100%"></i></div></div>
+          <div class="mac"><div class="row"><b>Carbohidratos</b><span>${fmtK(dt.carbs_g)} g</span></div><div class="bar"><i style="width:100%;background:var(--blue)"></i></div></div>
+          <div class="mac"><div class="row"><b>Grasas</b><span>${fmtK(dt.fat_g)} g</span></div><div class="bar"><i style="width:100%;background:var(--amber)"></i></div></div>
+        </div>
+      </div>
+      ${day.trained == null ? `<div class="hint">Marca en «Día» si entrenas hoy para ajustar las kcal (entreno ${fmtK(dt.kcal.train)} · descanso ${fmtK(dt.kcal.rest)}).</div>` : ''}
+    </div>
+    ${meals.length ? `<div class="card"><div class="ch"><h2>Comidas del plan</h2></div>
+      ${meals.map((m) => `<div class="meal"><span>${esc(m.slot)}</span><div class="por">${Object.entries(m.portions || {}).map(([k, n]) => `<span class="${esc(k)}">${esc(n)}${esc(k)}</span>`).join('')}</div></div>`).join('')}
+      <div class="muted small" style="margin-top:6px">Porciones · P proteína · C carbohidrato · G grasa</div></div>` : ''}
+    ${(dt.rules || []).length ? `<div class="card flat"><div class="muted small" style="font-weight:700;margin-bottom:6px">Reglas</div>${dt.rules.map((r) => `<div style="font-size:14px;margin-bottom:4px">${esc(r)}</div>`).join('')}</div>` : ''}
+    <div class="soon">${icon.info}<div>El registro de alimentos por gramos (buscador, productos de supermercado, escáner) llega en la fase 2. Mientras, para el cálculo del gasto se asume que sigues el plan.</div></div>`;
+}
+
+// ---------------------------------------------------------------- Entreno
+function suggestedDay(ctx, date, days) {
+  const all = ctx.store.allDays();
+  const past = range(addDays(date, -10), addDays(date, -1)).reverse();
+  const last = past.map((d) => all[d]?.session?.day).find(Boolean);
+  if (!last) return days[0]?.name;
+  const i = days.findIndex((d) => d.name === last);
+  return days[(i + 1) % days.length]?.name;
+}
+
+function renderTraining(ctx) {
+  const date = ctx.state.date;
+  const v = planFor(ctx.store.get(FILES.plan), date);
+  const days = v?.routine?.days || [];
+  if (!days.length) return `<div class="card empty"><b>Sin rutina</b>Añádela en Plan → Rutina.</div>`;
+  const day = ctx.store.day(date);
+  const sel = ctx.state.trainDay && days.some((d) => d.name === ctx.state.trainDay) ? ctx.state.trainDay : day.session?.day || suggestedDay(ctx, date, days);
+  const rd = days.find((d) => d.name === sel) || days[0];
+  const done = day.session?.day === rd.name && day.trained === true;
+  return `<div class="daytabs" id="trainDays">${days.map((d) => `<button data-v="${esc(d.name)}" class="${d.name === rd.name ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>
+    <div class="card">
+      <div class="ch"><h2>${esc(rd.name)}</h2><span class="aux">${rd.items.reduce((a, x) => a + (x.sets || 0), 0)} series</span></div>
+      ${rd.items.map((x, i) => `<div class="pe"><span class="ex-n ${done ? 'done' : ''}">${done ? '✓' : i + 1}</span><div class="ex-t"><b>${esc(x.name)}</b><span>${esc(x.sets)} × ${esc(x.reps?.join('–'))}${x.rpe ? ` · RPE ${esc(x.rpe)}` : ''}</span>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}</div></div>`).join('')}
+      <div class="actions-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+        <button class="btn ${done ? 'secondary' : 'primary'}" id="sessDone">${done ? 'Hecha ✓' : 'Sesión hecha'}</button>
+        <button class="btn secondary" id="sessRest">Hoy descanso</button>
+      </div>
+    </div>
+    <div class="soon">${icon.info}<div>El registro de series (kg, reps, RPE), la fuerza estimada y la autorregulación llegan en la fase 3.</div></div>`;
+}
+
+function bindTraining(root, ctx) {
+  const date = ctx.state.date;
+  bindSeg(root, '#trainDays', (v) => { ctx.state.trainDay = v; ctx.render(); });
+  $('#sessDone', root)?.addEventListener('click', () => {
+    const name = $('#trainDays button.on', root)?.dataset.v;
+    ctx.store.updateDay(date, (d) => { d.trained = true; d.session = { ...(d.session || {}), day: name }; }, `Entreno ${fmtShort(date)}: ${name}`);
+    toast(`${name}: hecha`);
+    ctx.render();
+  });
+  $('#sessRest', root)?.addEventListener('click', () => {
+    ctx.store.updateDay(date, (d) => { d.trained = false; delete d.session; }, `Descanso ${fmtShort(date)}`);
+    toast('Día de descanso');
+    ctx.render();
+  });
+}
