@@ -78,7 +78,7 @@ recomp-data/
       "measures": { "waist": 93.8 }, "skinfolds": { "sf_supraspinale": 10.4 },
       "photos": ["front", "side_r", "side_l", "back"],
       "ratings": { "diet": 3, "training": 4, "sleep": 2, "stress": 1 },
-      "adherence_days": { "AAAA-MM-DD": true },         // confirma los días "asumidos" de la semana (ver 04 §2)
+      "adherence": { "status": "plan|over|under|unknown", "kcal_week": 1400 },  // días SIN registro de los 7 revisados (ver 04 §2)
       "autoreg": { "isquios": { "soreness": 2, "performance": 2 } },
       "note": "", "decision": { "type": "keep|adjust|phase", "text": "" }
     },
@@ -88,7 +88,7 @@ recomp-data/
 - `per100` es una **copia** de los valores del alimento en el momento de registrarlo: el histórico
   no cambia aunque la base se actualice.
 - Un día sin `meals` o con `meals_complete: null` **se asume según el plan** (no se cuenta lo
-  registrado como ingesta total). El domingo, `adherence_days` confirma o corrige esos días.
+  registrado como ingesta total). En el control, `adherence` dice cómo fueron esos días sin registro.
 
 ## foods.json (alimentos propios)
 ```jsonc

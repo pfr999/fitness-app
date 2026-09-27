@@ -1,6 +1,6 @@
 // Control semanal: medidas → fotos → cómo ha ido → resumen y decisión. Pasos saltables.
 
-import { $, $$, esc, fmt, fmtK, num, toast, openSheet, bindSeg, icon, alertBox, signed } from '../ui/ui.js';
+import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, bindSeg, icon, alertBox, signed } from '../ui/ui.js';
 import { addDays, fmtShort, range, lastWeekday, weekday, daysBetween, fmtDayShort } from '../dates.js';
 import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
 import { analyze, weekSummary } from '../engine/analysis.js';
@@ -53,7 +53,7 @@ function newDraft(ctx, date) {
     skinfolds: ck.skinfolds || {},
     photos: ck.photos || [],
     ratings: ck.ratings || {},
-    adherence_days: ck.adherence_days || {},
+    adherence: ck.adherence || { status: 'plan', kcal_week: null },
     note: ck.note || '',
     decision: ck.decision || { type: 'keep', text: '' },
   };
@@ -101,18 +101,17 @@ export function bind(root, ctx) {
     if (sum) sum.textContent = fmt(Object.values(d.skinfolds).reduce((a, b) => a + b, 0)) + ' mm';
   }));
   $$('[data-rating]', root).forEach((s) => bindSeg(s.parentElement, `[data-rating="${s.dataset.rating}"]`, (v) => { d.ratings[s.dataset.rating] = +v; }));
-  $$('[data-adh]', root).forEach((s) => bindSeg(s.parentElement, `[data-adh="${s.dataset.adh}"]`, (v) => {
-    const day = s.dataset.adh;
-    const box = $(`[data-adhdiff="${day}"]`, root);
-    box.hidden = v !== 'diff';
-    if (v === 'yes') delete d.adherence_days[day];
-    else if (v === 'unk') d.adherence_days[day] = false;
-    else { const n = num($(`[data-adhval="${day}"]`, root).value.replace('+', '')); d.adherence_days[day] = n ?? 0; $(`[data-adhval="${day}"]`, root).focus(); }
-  }));
-  $$('[data-adhval]', root).forEach((inp) => inp.addEventListener('input', () => {
-    const n = num(inp.value.replace('+', '').replace('−', '-'));
-    d.adherence_days[inp.dataset.adhval] = n ?? 0;
-  }));
+  const setKcal = () => {
+    const n = int($('#adhVal', root)?.value);
+    d.adherence.kcal_week = n == null ? null : Math.abs(n) * (d.adherence.status === 'under' ? -1 : 1);
+  };
+  bindSeg(root, '#adh', (v) => {
+    d.adherence.status = v;
+    const box = $('#adhKcal', root);
+    box.hidden = !(v === 'over' || v === 'under');
+    if (box.hidden) d.adherence.kcal_week = null; else setKcal();
+  });
+  $('#adhVal', root)?.addEventListener('input', setKcal);
   $('#note', root)?.addEventListener('input', (e) => { d.note = e.target.value; });
   $('#m-date', root)?.addEventListener('change', (e) => {
     const v = e.target.value;
@@ -207,20 +206,27 @@ function prevCheckinWithPhotos(ctx, date) {
   return d ? { date: d, ...days[d] } : null;
 }
 
+const dias = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
+
 function stepWeek(ctx, d) {
-  const from = addDays(d.date, -6);
   const days = ctx.store.allDays();
-  const unlogged = range(from, d.date).filter((x) => days[x]?.meals_complete !== true);
+  const win = range(addDays(d.date, -6), d.date);
+  const logged = win.filter((x) => days[x]?.meals_complete === true);
+  const unlogged = win.length - logged.length;
+  const a = d.adherence;
+  const opt = (v, l) => `<button type="button" data-v="${v}" class="${a.status === v ? 'on' : ''}">${l}</button>`;
   const rating = (id, label, opts) => `<div class="field"><label>${label}</label><div class="chipset" data-rating="${id}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${d.ratings[id] === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
   return `<div class="card">
-      <div class="ch"><h2>¿Comiste según el plan?</h2></div>
-      <div class="muted small" style="margin:-4px 0 8px">Sirve para calcular tu gasto real. <b>Sí</b>: comiste lo del plan. <b>Distinto</b>: pon la diferencia aproximada (+300 si te pasaste, −200 si comiste menos). <b>No sé</b>: ese día no se usa en el cálculo.</div>
-      ${unlogged.map((x) => { const v = d.adherence_days[x]; const mode = typeof v === 'number' ? 'diff' : v === false ? 'unk' : 'yes'; return `<div class="row-edit" style="grid-template-columns:64px 1fr"><b style="font-size:14px">${esc(fmtDayShort(x))}</b>
-        <div class="stack" style="gap:6px"><div class="seg" data-adh="${x}"><button data-v="yes" class="${mode === 'yes' ? 'on' : ''}">Sí</button><button data-v="diff" class="${mode === 'diff' ? 'on' : ''}">Distinto</button><button data-v="unk" class="${mode === 'unk' ? 'on' : ''}">No sé</button></div>
-        <div class="unit-wrap" data-adhdiff="${x}" ${mode === 'diff' ? '' : 'hidden'}><input class="inp sm" inputmode="text" data-adhval="${x}" value="${typeof v === 'number' ? (v > 0 ? '+' : '') + v : ''}" placeholder="+300"><span class="u">kcal</span></div></div></div>`; }).join('')}
+      <div class="ch"><h2>¿Cómo fue la semana respecto al plan?</h2></div>
+      <div class="muted small" style="margin:-4px 0 10px">${logged.length ? `${dias(logged.length)} con comidas registradas: cuentan con lo registrado. ` : ''}${unlogged ? `Esta respuesta se aplica a ${logged.length ? 'los otros ' : 'los '}${dias(unlogged)} sin registrar comidas.` : 'Todos los días tienen las comidas registradas.'}</div>
+      ${unlogged ? `<div class="chipset" id="adh">${opt('plan', 'Según plan')}${opt('over', 'Me pasé')}${opt('under', 'Me quedé corto')}${opt('unknown', 'No lo sé')}</div>
+      <div id="adhKcal" ${a.status === 'over' || a.status === 'under' ? '' : 'hidden'} style="margin-top:12px">
+        <div class="field"><label for="adhVal">¿Cuánto aproximadamente, en toda la semana? (opcional)</label>
+          <div class="unit-wrap"><input class="inp" id="adhVal" inputmode="numeric" value="${a.kcal_week != null ? fmtK(Math.abs(a.kcal_week)) : ''}" placeholder="p. ej. 1.500"><span class="u">kcal</span></div></div>
+        <div class="hint">Ejemplo: dos cenas fuera de unas 700 kcal de más → 1.400. Si no lo sabes, déjalo vacío: esos días no se usarán para calcular tu gasto.</div>
+      </div>` : ''}
     </div>
     <div class="card"><div class="stack">
-      ${rating('diet', 'Valoración general de la dieta', [[1, 'Mal'], [2, 'Regular'], [3, 'Bien'], [4, 'Perfecta']])}
       ${rating('training', 'Valoración general del entreno', [[1, 'Mal'], [2, 'Regular'], [3, 'Bien'], [4, 'Perfecta']])}
       ${rating('sleep', 'Calidad del sueño', [[1, 'Baja'], [2, 'Media'], [3, 'Alta']])}
       ${rating('stress', 'Estrés', [[1, 'Bajo'], [2, 'Medio'], [3, 'Alto']])}
@@ -235,7 +241,7 @@ function previewAnalysis(ctx, d) {
   const days = { ...data.days };
   const day = { ...(days[d.date] || {}) };
   if (d.weight != null) day.weight = d.weight;
-  day.checkin = { measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, ratings: d.ratings, adherence_days: d.adherence_days, note: d.note, decision: d.decision };
+  day.checkin = { measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, ratings: d.ratings, adherence: d.adherence, note: d.note, decision: d.decision };
   days[d.date] = day;
   return { a: analyze({ ...data, days }, { today: ctx.today() }), days };
 }
@@ -297,7 +303,7 @@ function stepSummary(ctx, d) {
 async function save(ctx) {
   const st = ctx.state.ctl;
   const d = st.draft;
-  const checkin = { measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence_days: d.adherence_days, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
+  const checkin = { measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence: d.adherence.status === 'plan' ? undefined : d.adherence, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
   const target = ctx.store.day(d.date);
   if (d.date !== d.origDate && target.checkin && !confirm(`Ya hay un control el ${fmtShort(d.date)}. ¿Sustituirlo?`)) return;
   if (d.origDate && d.origDate !== d.date) {

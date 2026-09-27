@@ -7,7 +7,7 @@ import { adaptiveTDEE, hallProjection, energyDensity, rmr } from '../js/engine/e
 import { faulkner, navyMale, rfm, whtr, whtrCategory, ffmi, sumSkinfolds, rollingMean, isRealChange } from '../js/engine/body.js';
 import { rateTargetForBodyFat, rpRecommendation, e1rm } from '../js/engine/targets.js';
 import { planFor, newPlanVersion, kcalTarget, intakeFor, sumItems, monthsBetween, emptyPlan } from '../js/model.js';
-import { analyze } from '../js/engine/analysis.js';
+import { analyze, adherenceMap } from '../js/engine/analysis.js';
 import { simulate } from '../js/demo.js';
 
 const close = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg ?? ''} esperado ${b} ± ${tol}, obtenido ${a}`);
@@ -167,4 +167,19 @@ test('kcal objetivo e ingesta asumida', () => {
 test('analyze con datos vacíos no rompe', () => {
   const a = analyze({ config: {}, plan: emptyPlan(), days: {} }, { today: '2026-09-27' });
   assert.equal(a.empty, true);
+});
+
+test('adherencia semanal: se aplica solo a los días sin registro de la semana revisada', () => {
+  const days = { '2026-09-22': { meals_complete: true }, '2026-09-23': {} };
+  const ck = (adherence) => [{ date: '2026-09-27', checkin: { adherence } }];
+  // me pasé 1.200 kcal → repartido entre los 6 días sin registro (21 no entra: la ventana es 21..27, 22 está registrado)
+  const m = adherenceMap(ck({ status: 'over', kcal_week: 1200 }), days);
+  assert.equal(m['2026-09-22'], undefined, 'el día registrado usa lo registrado');
+  assert.equal(m['2026-09-23'], 200);
+  assert.equal(m['2026-09-20'], undefined, 'fuera de la semana revisada');
+  // sin cifra o "no lo sé" → esos días no se usan
+  assert.equal(adherenceMap(ck({ status: 'over', kcal_week: null }), days)['2026-09-23'], false);
+  assert.equal(adherenceMap(ck({ status: 'unknown' }), days)['2026-09-24'], false);
+  // según plan → sin ajuste
+  assert.deepEqual(adherenceMap(ck({ status: 'plan' }), days), {});
 });

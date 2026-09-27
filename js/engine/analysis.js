@@ -28,7 +28,7 @@ export function analyze({ config, plan, days }, { today }) {
   const body = bodyComposition(checkins, profile, curTrend?.level);
 
   // ---- TDEE adaptativo ----
-  const adherence = Object.assign({}, ...checkins.map((c) => c.checkin.adherence_days || {}));
+  const adherence = adherenceMap(checkins, days);
   const intakes = span.map((date) => {
     const v = planFor(plan, date);
     return { date, ...intakeFor(date, days[date], v, adherence) };
@@ -73,6 +73,27 @@ export function analyze({ config, plan, days }, { today }) {
     checkins,
     alerts: alertsFor({ config, days, span, trend, rate, rateTarget, version, today, dataDays }),
   };
+}
+
+/**
+ * Traduce la respuesta semanal del control a un ajuste por día, solo para los días SIN registro completo
+ * de comidas dentro de los 7 días que revisa ese control:
+ *   según plan → sin ajuste · me pasé/me quedé corto con cifra → la cifra repartida entre esos días
+ *   me pasé/me quedé corto sin cifra, o no lo sé → esos días no se usan (false)
+ * Los días con registro completo usan siempre lo registrado.
+ */
+export function adherenceMap(checkins, days) {
+  const out = {};
+  for (const { date, checkin } of checkins) {
+    Object.assign(out, checkin.adherence_days || {}); // formato antiguo (por día)
+    const a = checkin.adherence;
+    if (!a || a.status === 'plan') continue;
+    const unlogged = range(addDays(date, -6), date).filter((d) => days[d]?.meals_complete !== true);
+    if (!unlogged.length) continue;
+    const perDay = (a.status === 'over' || a.status === 'under') && typeof a.kcal_week === 'number' ? a.kcal_week / unlogged.length : null;
+    for (const d of unlogged) out[d] = perDay == null ? false : perDay;
+  }
+  return out;
 }
 
 function checkinsOf(days, dates) {

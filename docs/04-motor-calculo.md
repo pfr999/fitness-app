@@ -55,8 +55,9 @@ grasa 9.440 kcal/kg, tejido magro 1.816 kcal/kg; fracción magra `p = 10,4 / (10
    - Día con `meals_complete: true` → suma de lo registrado.
    - Día sin registrar o a medias (`meals_complete: null`) → **kcal del plan** de ese día
      (entreno/descanso). No registrar ≠ comer mal.
-   - El domingo, `adherence_days` confirma o corrige esos días asumidos; un día marcado como no
-     cumplido se excluye de la ventana.
+   - En el control semanal, una sola pregunta para los días SIN registro de los 7 revisados:
+     según plan → kcal del plan · me pasé / me quedé corto con cifra semanal → plan + cifra
+     repartida entre esos días · sin cifra o "no lo sé" → esos días se excluyen de la ventana.
    - Si > 50 % de la ventana son días asumidos, el TDEE se etiqueta "estimado con plan".
 3. `E_obs = ingesta_media − ρ · pendiente`; varianza = ρ²·var(pendiente) + var(ingesta).
 4. Suavizado bayesiano (Kalman escalar): `P += q_E` (q_E ≈ 20² kcal²/día);

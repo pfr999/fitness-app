@@ -43,6 +43,8 @@ export function buildSummary(ctx) {
     const m = c.checkin.measures || {};
     const parts = [c.weight != null && `peso ${f(c.weight)}`, m.waist != null && `cintura ${f(m.waist)}`, m.abdomen != null && `abdomen ${f(m.abdomen)}`].filter(Boolean);
     lines.push(`- ${fmtShort(c.date)}: ${parts.join(' · ') || 'sin medidas'}${c.checkin.decision?.text ? ` · decisión: ${c.checkin.decision.text}` : ''}`);
+    const ad = c.checkin.adherence;
+    if (ad && ad.status !== 'plan') lines.push(`  - Dieta en días sin registrar: ${{ over: 'me pasé', under: 'me quedé corto', unknown: 'no lo sé' }[ad.status]}${ad.kcal_week != null ? ` (${ad.kcal_week > 0 ? '+' : ''}${k(ad.kcal_week)} kcal en la semana)` : ''}`);
     if (c.checkin.note) lines.push(`  - Nota: ${c.checkin.note.replace(/\n+/g, ' ')}`);
   }
   lines.push('');
