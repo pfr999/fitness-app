@@ -5,13 +5,14 @@ import { addDays, fmtShort, fmtLong, range } from '../dates.js';
 import { FILES, planFor, sumItems } from '../model.js';
 import { isDue } from './control.js';
 import * as meals from './meals.js';
+import * as workout from './workout.js';
 
 const SUBS = [['dia', 'Día'], ['comidas', 'Comidas'], ['entreno', 'Entreno']];
 
 export function render(ctx) {
   const sub = ctx.state.hoySub;
   const seg = `<div class="seg" id="hoySeg" style="margin-bottom:12px">${SUBS.map(([k, l]) => `<button data-v="${k}" class="${k === sub ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-  const body = sub === 'comidas' ? meals.render(ctx) : sub === 'entreno' ? renderTraining(ctx) : renderDay(ctx);
+  const body = sub === 'comidas' ? meals.render(ctx) : sub === 'entreno' ? workout.render(ctx) : renderDay(ctx);
   return seg + dateNav(ctx) + body;
 }
 
@@ -21,7 +22,7 @@ export function bind(root, ctx) {
   $('#nextDay', root)?.addEventListener('click', () => { if (ctx.state.date < ctx.today()) { ctx.state.date = addDays(ctx.state.date, 1); ctx.render(); } });
   $('#toToday', root)?.addEventListener('click', () => { ctx.state.date = ctx.today(); ctx.render(); });
   if (ctx.state.hoySub === 'dia') bindDay(root, ctx);
-  if (ctx.state.hoySub === 'entreno') bindTraining(root, ctx);
+  if (ctx.state.hoySub === 'entreno') workout.bind(root, ctx);
   if (ctx.state.hoySub === 'comidas') meals.bind(root, ctx);
 }
 
@@ -149,49 +150,3 @@ function dailySheet(ctx, date) {
   });
 }
 
-// ---------------------------------------------------------------- Entreno
-function suggestedDay(ctx, date, days) {
-  const all = ctx.store.allDays();
-  const past = range(addDays(date, -10), addDays(date, -1)).reverse();
-  const last = past.map((d) => all[d]?.session?.day).find(Boolean);
-  if (!last) return days[0]?.name;
-  const i = days.findIndex((d) => d.name === last);
-  return days[(i + 1) % days.length]?.name;
-}
-
-function renderTraining(ctx) {
-  const date = ctx.state.date;
-  const v = planFor(ctx.store.get(FILES.plan), date);
-  const days = v?.routine?.days || [];
-  if (!days.length) return `<div class="card empty"><b>Sin rutina</b>Añádela en Plan → Rutina.</div>`;
-  const day = ctx.store.day(date);
-  const sel = ctx.state.trainDay && days.some((d) => d.name === ctx.state.trainDay) ? ctx.state.trainDay : day.session?.day || suggestedDay(ctx, date, days);
-  const rd = days.find((d) => d.name === sel) || days[0];
-  const done = day.session?.day === rd.name && day.trained === true;
-  return `<div class="daytabs" id="trainDays">${days.map((d) => `<button data-v="${esc(d.name)}" class="${d.name === rd.name ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>
-    <div class="card">
-      <div class="ch"><h2>${esc(rd.name)}</h2><span class="aux">${rd.items.reduce((a, x) => a + (x.sets || 0), 0)} series</span></div>
-      ${rd.items.map((x, i) => `<div class="pe"><span class="ex-n ${done ? 'done' : ''}">${done ? '✓' : i + 1}</span><div class="ex-t"><b>${esc(x.name)}</b><span>${esc(x.sets)} × ${esc(x.reps?.join('–'))}${x.rpe ? ` · RPE ${esc(x.rpe)}` : ''}</span>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}</div></div>`).join('')}
-      <div class="actions-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
-        <button class="btn ${done ? 'secondary' : 'primary'}" id="sessDone">${done ? 'Hecha ✓' : 'Sesión hecha'}</button>
-        <button class="btn secondary" id="sessRest">Hoy descanso</button>
-      </div>
-    </div>
-    <div class="soon">${icon.info}<div>El registro de series (kg, reps, RPE), la fuerza estimada y la autorregulación llegan en la fase 3.</div></div>`;
-}
-
-function bindTraining(root, ctx) {
-  const date = ctx.state.date;
-  bindSeg(root, '#trainDays', (v) => { ctx.state.trainDay = v; ctx.render(); });
-  $('#sessDone', root)?.addEventListener('click', () => {
-    const name = $('#trainDays button.on', root)?.dataset.v;
-    ctx.store.updateDay(date, (d) => { d.trained = true; d.session = { ...(d.session || {}), day: name }; }, `Entreno ${fmtShort(date)}: ${name}`);
-    toast(`${name}: hecha`);
-    ctx.render();
-  });
-  $('#sessRest', root)?.addEventListener('click', () => {
-    ctx.store.updateDay(date, (d) => { d.trained = false; delete d.session; }, `Descanso ${fmtShort(date)}`);
-    toast('Día de descanso');
-    ctx.render();
-  });
-}

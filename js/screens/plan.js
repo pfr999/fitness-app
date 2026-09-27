@@ -5,6 +5,8 @@ import { addDays, fmtShort } from '../dates.js';
 import { FILES, currentPlan, newPlanVersion, kcalTarget } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
 import { writeSummary } from '../summary.js';
+import { exercisesOf, musclesLine, datalist, assignSheet, volumeBars } from './exercises.js';
+import { resolveExercise, plannedVolume } from '../engine/training.js';
 
 const TABS = [['rutina', 'Rutina'], ['dieta', 'Dieta'], ['supl', 'Suplem.'], ['obj', 'Objetivos']];
 
@@ -69,10 +71,18 @@ function renderRoutine(ctx, v) {
   if (!days.length) return `<div class="card empty"><b>Sin rutina</b>Crea tu primer día de entreno.<div style="margin-top:12px"><button class="btn primary" data-editday="-1">${icon.plus} Añadir día</button></div></div>`;
   const i = Math.min(ctx.state.planDay || 0, days.length - 1);
   const d = days[i];
+  const exs = exercisesOf(ctx);
+  const vol = plannedVolume(v.routine, exs, v.targets?.sessions);
   return `<div class="daytabs" id="dayTabs">${days.map((x, k) => `<button data-v="${k}" class="${k === i ? 'on' : ''}">${esc(x.name)}</button>`).join('')}<button data-v="new" aria-label="Añadir día">${icon.plus}</button></div>
     <div class="card"><div class="ch"><h2>${esc(d.name)}</h2><span class="aux">${d.items.reduce((a, x) => a + (x.sets || 0), 0)} series</span></div>
-      ${d.items.map((x, k) => `<div class="pe"><span class="ex-n">${k + 1}</span><div class="ex-t"><b>${esc(x.name)}</b><span>${esc(x.sets)} × ${esc((x.reps || []).join('–'))}${x.rpe ? ` · RPE ${esc(x.rpe)}` : ''}</span>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}</div></div>`).join('') || '<div class="muted">Sin ejercicios.</div>'}
+      ${d.items.map((x, k) => { const ex = resolveExercise(x, exs); return `<div class="pe"><span class="ex-n">${k + 1}</span><div class="ex-t"><b>${esc(x.name)}</b><span>${esc(x.sets)} × ${esc((x.reps || []).join('–'))}${x.rpe ? ` · RPE ${esc(x.rpe)}` : ''}</span>
+        ${ex ? `<div class="muted small" style="font-weight:600">${esc(musclesLine(ex))}</div>` : `<div><button class="link" data-assign="${esc(x.name)}" style="color:var(--amber);padding:2px 0">Sin músculos asignados · Asignar</button></div>`}
+        ${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}</div></div>`; }).join('') || '<div class="muted">Sin ejercicios.</div>'}
       <button class="btn secondary sm" style="margin-top:12px;width:100%" data-editday="${i}">${icon.edit} Editar ${esc(d.name)}</button>
+    </div>
+    <div class="card"><div class="ch"><h2>Volumen semanal planificado</h2><span class="aux">series por músculo</span></div>
+      ${volumeBars(vol.byMuscle)}
+      <div class="muted small" style="margin-top:8px">Con ${esc(v.targets?.sessions || days.length)} sesiones por semana (Objetivos) repartidas entre los ${days.length} días de la rutina. Franja verde: 10–20 series (Pelland 2025); el trabajo indirecto cuenta ½.${vol.unknown.length ? ` Sin contar (sin músculos asignados): ${esc(vol.unknown.join(', '))}.` : ''}</div>
     </div>`;
 }
 
@@ -140,6 +150,7 @@ export function bind(root, ctx) {
     ctx.state.planDay = +b.dataset.v; ctx.render();
   }));
   $$('[data-editday]', root).forEach((b) => b.addEventListener('click', () => daySheet(ctx, +b.dataset.editday)));
+  $$('[data-assign]', root).forEach((b) => b.addEventListener('click', () => assignSheet(ctx, b.dataset.assign, () => ctx.render())));
   $$('[data-supp]', root).forEach((b) => b.addEventListener('click', () => suppSheet(ctx, +b.dataset.supp, b.dataset.kind)));
   $$('[data-quick]', root).forEach((b) => b.addEventListener('click', () => {
     const q = b.dataset.quick;
@@ -253,7 +264,7 @@ function daySheet(ctx, idx) {
   const isNew = idx < 0;
   const day = isNew ? { name: `Día ${v.routine.days.length + 1}`, items: [] } : structuredClone(v.routine.days[idx]);
   const itemRow = (x, i) => `<div class="card flat" data-item="${i}" style="padding:12px;margin-bottom:8px">
-      <div class="row" style="margin-bottom:8px"><input class="inp sm" data-f="name" value="${esc(x.name)}" placeholder="Ejercicio" style="flex:1">
+      <div class="row" style="margin-bottom:8px"><input class="inp sm" data-f="name" list="exList" autocomplete="off" value="${esc(x.name)}" placeholder="Ejercicio (empieza a escribir)" style="flex:1">
         <div class="ops" style="display:flex;gap:4px"><button type="button" class="mini" data-up="${i}" aria-label="Subir">${icon.up}</button><button type="button" class="mini danger" data-del="${i}" aria-label="Quitar">${icon.trash}</button></div></div>
       <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
         <div class="unit-wrap"><input class="inp sm" data-f="sets" inputmode="numeric" value="${x.sets ?? ''}" placeholder="3"><span class="u">ser</span></div>
@@ -266,7 +277,9 @@ function daySheet(ctx, idx) {
   openSheet(`<h3>${isNew ? 'Nuevo día' : `Editar ${esc(day.name)}`}</h3>
     <div class="stack" style="margin-top:12px">
       <div class="field"><label for="dayName">Nombre del día</label><input class="inp" id="dayName" value="${esc(day.name)}"></div>
+      ${datalist(ctx)}
       <div id="items">${day.items.map(itemRow).join('')}</div>
+      <div class="hint" style="margin-top:-4px">Al escribir te sugiere ejercicios del catálogo (ya saben qué músculos trabajan). Si pones uno que no está, luego podrás asignarle los músculos.</div>
       <button class="btn secondary sm" id="addItem" type="button">${icon.plus} Añadir ejercicio</button>
       ${reasonField}
       <button class="btn primary" id="daySave">Guardar nueva versión</button>
@@ -276,7 +289,9 @@ function daySheet(ctx, idx) {
       const collect = () => $$('[data-item]', sh).map((row) => {
         const g = (f) => $(`[data-f="${f}"]`, row).value;
         const lo = int(g('lo')), hi = int(g('hi'));
-        return { name: g('name').trim(), sets: int(g('sets')) || 0, reps: [lo ?? hi ?? 0, hi ?? lo ?? 0], rpe: num(g('rpe')) ?? undefined, note: g('note').trim() || undefined };
+        const nm = g('name').trim();
+        const ex = resolveExercise(nm, exercisesOf(ctx));
+        return { name: nm, ...(ex ? { ex: ex.id } : {}), sets: int(g('sets')) || 0, reps: [lo ?? hi ?? 0, hi ?? lo ?? 0], rpe: num(g('rpe')) ?? undefined, note: g('note').trim() || undefined };
       });
       const redraw = (items) => { $('#items', sh).innerHTML = items.map(itemRow).join(''); bindRows(); };
       const bindRows = () => {

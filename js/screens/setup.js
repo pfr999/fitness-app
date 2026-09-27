@@ -103,6 +103,15 @@ export async function seedDemo(store) {
   await be.putText(FILES.config, JSON.stringify(sim.config, null, 2), null, 'demo');
   await be.putText(FILES.plan, JSON.stringify(sim.plan, null, 2), null, 'demo');
   for (const f of [FILES.exercises, FILES.foods, FILES.events, FILES.labs]) await be.putText(f, '{}', null, 'demo');
+  // series de ejemplo con progresión, para que Progreso → Fuerza tenga datos
+  const rd = sim.plan.versions[0].routine.days;
+  let n = 0;
+  for (const [d, v] of Object.entries(sim.days)) {
+    if (!v.trained) continue;
+    const day = rd[n % rd.length], week = Math.floor(n / 4);
+    v.session = { day: day.name, sets: day.items.flatMap((it, j) => Array.from({ length: it.sets }, (_, i) => ({ name: it.name, i, kg: [100, 120, 180, 80, 70, 10][(n % 2) * 3 + j] + week * 2.5 * (j < 2 ? 1 : 0.4), reps: it.reps[1] - (i > 1 ? 1 : 0), rpe: it.rpe }))) };
+    n++;
+  }
   const months = {};
   for (const [d, v] of Object.entries(sim.days)) (months[monthKey(d)] ||= {})[d] = v;
   for (const [ym, m] of Object.entries(months)) await be.putText(FILES.month(ym), JSON.stringify(m), null, 'demo');

@@ -7,8 +7,12 @@ import { analyze, weekSummary } from '../engine/analysis.js';
 import { MDC, isRealChange } from '../engine/body.js';
 import { processPhoto, hydratePhotos, forgetPhoto } from '../photos.js';
 import { buildSummary, writeSummary } from '../summary.js';
+import { rpRecommendation } from '../engine/targets.js';
+import { musclesTrained } from '../engine/training.js';
+import { MUSCLES, MUSCLE_LABEL } from '../training/catalog.js';
+import { exercisesOf } from './exercises.js';
 
-const STEPS = ['Medidas', 'Fotos', 'Cómo ha ido', 'Resumen y decisión'];
+const STEPS = ['Medidas', 'Fotos', 'Cómo ha ido', 'Entreno', 'Resumen y decisión'];
 
 /** Inicio del periodo de control actual: el último día de control (p. ej. domingo) hasta hoy. */
 function periodStart(ctx) {
@@ -54,6 +58,7 @@ function newDraft(ctx, date) {
     photos: ck.photos || [],
     ratings: ck.ratings || {},
     adherence: ck.adherence || { status: 'plan', kcal_week: null },
+    autoreg: ck.autoreg || {},
     note: ck.note || '',
     decision: ck.decision || { type: 'keep', text: '' },
   };
@@ -66,7 +71,7 @@ export function render(ctx) {
   if (done && !st.editing) return renderDone(ctx, done);
   if (!st.draft) st.draft = newDraft(ctx, done || ctx.today());
   const n = st.step;
-  const body = n === 1 ? stepMeasures(ctx, st.draft) : n === 2 ? stepPhotos(ctx, st.draft) : n === 3 ? stepWeek(ctx, st.draft) : stepSummary(ctx, st.draft);
+  const body = n === 1 ? stepMeasures(ctx, st.draft) : n === 2 ? stepPhotos(ctx, st.draft) : n === 3 ? stepWeek(ctx, st.draft) : n === 4 ? stepTraining(ctx, st.draft) : stepSummary(ctx, st.draft);
   return `<div class="stepper">${STEPS.map((_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>
     <div class="steplbl"><b>${STEPS[n - 1]}</b><span class="muted">${n} de ${STEPS.length}</span></div>
     ${body}
@@ -112,6 +117,17 @@ export function bind(root, ctx) {
     if (box.hidden) d.adherence.kcal_week = null; else setKcal();
   });
   $('#adhVal', root)?.addEventListener('input', setKcal);
+  $$('[data-artoggle]', root).forEach((b) => b.addEventListener('click', () => b.closest('.ar').classList.toggle('open')));
+  $$('[data-ar]', root).forEach((s) => s.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const [m, k] = s.dataset.ar.split('.');
+    d.autoreg[m] = { soreness: 2, performance: 2, ...(d.autoreg[m] || {}), [k]: +b.dataset.v };
+    $$('button', s).forEach((x) => x.classList.toggle('on', x === b));
+    const r = rpRecommendation(d.autoreg[m].soreness, d.autoreg[m].performance);
+    $(`[data-arval="${m}"]`, root).textContent = `${d.autoreg[m].soreness} · ${d.autoreg[m].performance}`;
+    const tag = $(`[data-arrec="${m}"]`, root);
+    tag.textContent = r.label; tag.className = `badge ${r.tone === 'good' ? 'g' : r.tone === 'warn' ? 'a' : 'n'}`;
+  }));
   $('#note', root)?.addEventListener('input', (e) => { d.note = e.target.value; });
   $('#m-date', root)?.addEventListener('change', (e) => {
     const v = e.target.value;
@@ -236,6 +252,24 @@ function stepWeek(ctx, d) {
       <textarea class="inp" id="note" placeholder="Sensaciones, incidencias, lesiones, lo que quieras recordar…">${esc(d.note)}</textarea></div>`;
 }
 
+function stepTraining(ctx, d) {
+  const v = planFor(ctx.store.get(FILES.plan), d.date);
+  const muscles = musclesTrained(ctx.store.allDays(), d.date, exercisesOf(ctx), v?.routine).filter((m) => MUSCLE_LABEL[m]);
+  if (!muscles.length) return `<div class="card empty"><b>Sin entreno que valorar</b>Cuando tengas rutina o series apuntadas, aquí ajustarás las series de cada músculo.</div>`;
+  const order = MUSCLES.map(([k]) => k).filter((k) => muscles.includes(k));
+  const scale = (m, k, val, labels) => `<div class="scale" data-ar="${m}.${k}">${[1, 2, 3, 4].map((n) => `<button type="button" data-v="${n}" class="${val === n ? 'on' : ''}" title="${labels[n - 1]}">${n}</button>`).join('')}</div>`;
+  return `<div class="card">
+      <div class="ch"><h2>Autorregulación</h2><span class="method">Método RP</span></div>
+      <div class="muted small" style="margin:-4px 0 12px">Todo empieza en <b>2 · 2</b> (normal). Toca un músculo solo si algo se salió de lo normal.<br>
+        <b>Agujetas</b>: 1 nada · 2 se curaron de sobra · 3 justo a tiempo · 4 aún doloridas.<br>
+        <b>Rendimiento</b>: 1 superé lo previsto · 2 cumplí · 3 me costó · 4 no igualé la semana anterior.</div>
+      ${order.map((m) => { const a = { soreness: 2, performance: 2, ...(d.autoreg[m] || {}) }; const r = rpRecommendation(a.soreness, a.performance);
+        const changed = a.soreness !== 2 || a.performance !== 2;
+        return `<div class="ar ${changed ? 'open' : ''}"><button type="button" class="hd" data-artoggle style="width:100%;border:0;background:none;padding:0;color:inherit;font:inherit;text-align:left"><b>${esc(MUSCLE_LABEL[m])}</b><span style="display:flex;gap:8px;align-items:center"><span class="muted small num" data-arval="${m}">${a.soreness} · ${a.performance}</span><span class="badge ${r.tone === 'good' ? 'g' : r.tone === 'warn' ? 'a' : 'n'}" data-arrec="${m}">${r.label}</span></span></button>
+          <div class="lines"><span>Agujetas</span>${scale(m, 'soreness', a.soreness, ['nada', 'curadas de sobra', 'justo a tiempo', 'aún doloridas'])}<span>Rendimiento</span>${scale(m, 'performance', a.performance, ['superé', 'cumplí', 'me costó', 'no igualé'])}</div></div>`; }).join('')}
+    </div>`;
+}
+
 function previewAnalysis(ctx, d) {
   const data = ctx.data();
   const days = { ...data.days };
@@ -292,6 +326,9 @@ function stepSummary(ctx, d) {
         ${row('Sueño', wk.sleep != null ? fmt(wk.sleep) + ' h' : '—', t.sleep_h ? fmt(t.sleep_h) : '—', wk.sleep != null && t.sleep_h ? wk.sleep >= t.sleep_h - 0.3 : null)}
         ${row('Pesadas', `${wk.weighIns}/7`, '≥ 4', wk.weighIns >= 4)}
       </table></div>
+    ${Object.keys(d.autoreg).length ? `<div class="card"><div class="ch"><h2>Series próxima semana</h2><span class="method">Método RP</span></div>
+      ${Object.entries(d.autoreg).map(([m, a]) => { const r = rpRecommendation(a.soreness ?? 2, a.performance ?? 2); return `<div class="meal"><span>${esc(MUSCLE_LABEL[m] || m)}</span><span class="badge ${r.tone === 'good' ? 'g' : r.tone === 'warn' ? 'a' : 'n'}">${r.label}</span></div>`; }).join('')}
+      <div class="hint">Solo aparecen los músculos que has tocado; el resto: +1 serie (todo normal).</div></div>` : ''}
     <div class="card"><div class="ch"><h2>Tu decisión</h2></div>
       <div class="seg" id="decision" style="margin-bottom:10px">${[['keep', 'Mantener'], ['adjust', 'Ajustar plan'], ['phase', 'Nueva fase']].map(([v, l]) => `<button data-v="${v}" class="${d.decision.type === v ? 'on' : ''}">${l}</button>`).join('')}</div>
       <textarea class="inp" id="decisionText" placeholder="Qué decides y por qué (queda en el historial)">${esc(d.decision.text)}</textarea>
@@ -303,7 +340,10 @@ function stepSummary(ctx, d) {
 async function save(ctx) {
   const st = ctx.state.ctl;
   const d = st.draft;
-  const checkin = { measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence: d.adherence.status === 'plan' ? undefined : d.adherence, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
+  const v = planFor(ctx.store.get(FILES.plan), d.date);
+  const shown = musclesTrained(ctx.store.allDays(), d.date, exercisesOf(ctx), v?.routine).filter((m) => MUSCLE_LABEL[m]);
+  const autoreg = Object.fromEntries(shown.map((m) => [m, { soreness: 2, performance: 2, ...(d.autoreg[m] || {}) }]));
+  const checkin = { autoreg: Object.keys(autoreg).length ? autoreg : undefined, measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence: d.adherence.status === 'plan' ? undefined : d.adherence, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
   const target = ctx.store.day(d.date);
   if (d.date !== d.origDate && target.checkin && !confirm(`Ya hay un control el ${fmtShort(d.date)}. ¿Sustituirlo?`)) return;
   if (d.origDate && d.origDate !== d.date) {

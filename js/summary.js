@@ -3,6 +3,8 @@
 import { addDays, fmtShort, range } from './dates.js';
 import { FILES, planFor, currentPlan } from './model.js';
 import { weekSummary } from './engine/analysis.js';
+import { allExercises, loggedVolume, exerciseHistory, strengthTrend, resolveExercise } from './engine/training.js';
+import { MUSCLE_LABEL } from './training/catalog.js';
 
 const f = (n, d = 1) => (n == null || Number.isNaN(n) ? '—' : n.toFixed(d).replace('.', ','));
 const k = (n) => (n == null ? '—' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
@@ -35,6 +37,13 @@ export function buildSummary(ctx) {
   lines.push(`## Últimos 7 días (${fmtShort(wk.from)}–${fmtShort(wk.to)})`);
   lines.push(`- Pesadas: ${wk.weighIns}/7 · pasos media ${k(wk.steps)}${wk.targets.steps ? ` (objetivo ${k(wk.targets.steps)})` : ''} · sueño ${f(wk.sleep)} h · sesiones ${wk.sessions}${wk.targets.sessions ? `/${wk.targets.sessions}` : ''}`);
   for (const al of a.alerts || []) lines.push(`- Aviso: ${al.title}. ${al.text}`);
+  const exs = allExercises(ctx.store.get('exercises.json'));
+  const lv = loggedVolume(days, wk.from, wk.to, exs);
+  if (Object.keys(lv.byMuscle).length) lines.push(`- Volumen (series fraccionales): ${Object.entries(lv.byMuscle).sort((x, y) => y[1] - x[1]).map(([m, v]) => `${MUSCLE_LABEL[m] || m} ${f(v, v % 1 ? 1 : 0)}`).join(', ')}`);
+  const ids = new Set();
+  for (const d of Object.keys(days)) for (const s of days[d]?.session?.sets || []) { const e = resolveExercise(s, exs); if (e) ids.add(e.id); }
+  const trends = [...ids].map((id) => { const h = exerciseHistory(days, id, exs).filter((x) => x.best); const t = strengthTrend(h); return { name: exs.find((e) => e.id === id)?.name, t, last: h[h.length - 1]?.best }; }).filter((x) => x.t.status !== 'pocos');
+  if (trends.length) lines.push(`- Fuerza (e1RM, 3 últimas sesiones vs 3 anteriores): ${trends.map((x) => `${x.name} ${x.t.status}${x.last ? ` (${f(x.last.e1rm, 0)} kg)` : ''}`).join(', ')}`);
   lines.push('');
   lines.push('## Últimos controles');
   const cks = (a.checkins || []).slice(-4).reverse();
@@ -45,6 +54,10 @@ export function buildSummary(ctx) {
     lines.push(`- ${fmtShort(c.date)}: ${parts.join(' · ') || 'sin medidas'}${c.checkin.decision?.text ? ` · decisión: ${c.checkin.decision.text}` : ''}`);
     const ad = c.checkin.adherence;
     if (ad && ad.status !== 'plan') lines.push(`  - Dieta en días sin registrar: ${{ over: 'me pasé', under: 'me quedé corto', unknown: 'no lo sé' }[ad.status]}${ad.kcal_week != null ? ` (${ad.kcal_week > 0 ? '+' : ''}${k(ad.kcal_week)} kcal en la semana)` : ''}`);
+    if (c.checkin.autoreg) {
+      const off = Object.entries(c.checkin.autoreg).filter(([, a]) => a.soreness !== 2 || a.performance !== 2);
+      if (off.length) lines.push(`  - Autorregulación (agujetas/rendimiento 1–4, normal 2/2): ${off.map(([m, a]) => `${MUSCLE_LABEL[m] || m} ${a.soreness}/${a.performance}`).join(', ')}`);
+    }
     if (c.checkin.note) lines.push(`  - Nota: ${c.checkin.note.replace(/\n+/g, ' ')}`);
   }
   lines.push('');

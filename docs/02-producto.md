@@ -52,9 +52,9 @@ Perfil y ajustes (fórmulas, métricas registradas, token) se abren desde el enc
 - Fecha del día en hora local (pesarse a las 00:30 no cae en ayer).
 
 ## Fases
-1. **MVP:** peso diario, recorrido de domingo (medidas, fotos, resumen, decisión), progreso (peso, cintura, TDEE), plan editable.
-2. **Comidas:** base de alimentos, buscador, gramos, totales vs objetivo, alimentos propios y recetas, escáner.
-3. **Entreno detallado:** registro de series, e1RM, volumen, autorregulación.
+1. **MVP:** peso diario, recorrido de domingo (medidas, fotos, resumen, decisión), progreso (peso, cintura, TDEE), plan editable. ✅
+2. **Comidas:** base de alimentos, buscador, gramos, totales vs objetivo, alimentos propios, escáner, día completo. ✅ (recetas: pendiente)
+3. **Entreno detallado:** catálogo de ejercicios, registro de series, e1RM, volumen, autorregulación. ✅
 4. Analíticas, importación del Excel histórico, cola sin conexión.
 
 Condición: **usar el MVP 2–3 semanas** antes de construir la fase 2. Ahí se verá qué sobra.

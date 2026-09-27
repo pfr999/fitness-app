@@ -7,6 +7,9 @@ import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
 import { rollingMean, whtrCategory, MDC } from '../engine/body.js';
 import { hydratePhotos } from '../photos.js';
+import { sparkline } from '../ui/charts.js';
+import { loggedVolume, plannedVolume, exerciseHistory, strengthTrend, resolveExercise } from '../engine/training.js';
+import { exercisesOf, volumeBars } from './exercises.js';
 
 const RANGES = [[28, '4 sem'], [56, '8 sem'], [84, '12 sem'], [0, 'Todo']];
 
@@ -108,6 +111,24 @@ export function render(ctx) {
       <div class="cmp">${cell(A)}${cell(B)}</div></div>`;
   }
 
+  // Entreno: volumen de los últimos 7 días y fuerza por ejercicio
+  const exs = exercisesOf(ctx);
+  const days = ctx.store.allDays();
+  const lv = loggedVolume(days, addDays(today, -6), today, exs);
+  const planV = plannedVolume(planFor(plan, today)?.routine, exs, planFor(plan, today)?.targets?.sessions);
+  const useLogged = Object.keys(lv.byMuscle).length > 0;
+  const volume = `<div class="card"><div class="ch"><h2>Volumen semanal</h2><span class="aux">${useLogged ? `últimos 7 días · ${lv.sessions} sesiones` : 'planificado'}</span></div>
+    ${volumeBars(useLogged ? lv.byMuscle : planV.byMuscle)}
+    <div class="muted small" style="margin-top:8px">Series por músculo; el trabajo indirecto cuenta ½. Franja verde: 10–20 (Pelland 2025).${useLogged ? '' : ' Cuando apuntes series en Entreno se mostrará lo real.'}${(useLogged ? lv.unknown : planV.unknown).length ? ` Sin contar: ${esc((useLogged ? lv.unknown : planV.unknown).join(', '))}.` : ''}</div></div>`;
+  const exIds = new Map();
+  for (const d of Object.keys(days)) for (const s of days[d]?.session?.sets || []) { const e = resolveExercise(s, exs); if (e) exIds.set(e.id, e); }
+  const lifts = [...exIds.values()].map((e) => ({ e, h: exerciseHistory(days, e.id, exs).filter((x) => x.best) })).filter((x) => x.h.length >= 2).sort((a, b) => b.h.length - a.h.length).slice(0, 8);
+  const TREND = { sube: ['Sube', 'g'], estable: ['Estable', 'n'], baja: ['Baja', 'a'], pocos: ['Pocos datos', 'n'] };
+  const strength = lifts.length ? `<div class="card"><div class="ch"><h2>Fuerza (e1RM)</h2><span class="method">Epley + RIR</span></div>
+    ${lifts.map(({ e, h }) => { const t = strengthTrend(h); const last = h[h.length - 1].best; const [lbl, tone] = TREND[t.status];
+      return `<div class="lift"><div><b>${esc(e.name)}</b><span>${fmt(last.e1rm, 0)} kg estimado · mejor serie ${fmt(last.kg, last.kg % 1 ? 1 : 0)} × ${last.reps}${last.rpe ? ` @${last.rpe}` : ''}</span></div>${sparkline(h.map((x) => x.best.e1rm), { color: t.status === 'baja' ? 'var(--amber)' : 'var(--accent)' })}<span class="badge ${tone}">${lbl}</span></div>`; }).join('')}
+    <div class="muted small" style="margin-top:8px">Fuerza máxima estimada con las series a RPE 7 o más. En déficit, mantenerla ya es buena señal.</div></div>` : '';
+
   return `<div class="seg" id="rangeSeg" style="margin-bottom:12px">${RANGES.map(([v, l]) => `<button data-v="${v}" class="${v === st.range ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${kpis}
     ${a.alerts.length ? `<div class="card">${a.alerts.map(alertBox).join('')}</div>` : ''}
@@ -120,6 +141,8 @@ export function render(ctx) {
       ${compChart}
       ${rows.length >= 2 ? `<div class="legend"><span><i style="background:var(--accent)"></i>Media de 3 controles</span><span><i class="dot" style="background:var(--dot)"></i>Medida</span><span><i style="background:var(--accent-band);height:8px"></i>Margen de error</span></div>` : ''}</div>
     ${comp}
+    ${volume}
+    ${strength}
     ${photos}`;
 }
 
