@@ -2,7 +2,7 @@
 
 import { $, $$, esc, fmt, fmtK, num, toast, openSheet, bindSeg, icon, alertBox, signed } from '../ui/ui.js';
 import { addDays, fmtShort, range, lastWeekday, weekday, daysBetween, fmtDayShort } from '../dates.js';
-import { FILES, POSES, planFor } from '../model.js';
+import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
 import { analyze, weekSummary } from '../engine/analysis.js';
 import { MDC, isRealChange } from '../engine/body.js';
 import { processPhoto, hydratePhotos, forgetPhoto } from '../photos.js';
@@ -46,6 +46,8 @@ function newDraft(ctx, date) {
   const ck = day.checkin ? structuredClone(day.checkin) : {};
   return {
     date,
+    origDate: day.checkin ? date : null,
+    photoDate: ck.photos_from || date,
     weight: day.weight ?? null,
     measures: ck.measures || {},
     skinfolds: ck.skinfolds || {},
@@ -73,7 +75,9 @@ export function render(ctx) {
       <button class="btn primary" id="next">${n === STEPS.length ? 'Guardar control' : 'Siguiente'}</button>
     </div>
     ${n < STEPS.length ? `<button class="link" id="skip" style="width:100%;text-align:center;margin-top:6px">Saltar este paso</button>` : ''}
-    ${st.editing ? `<button class="link" id="cancelEdit" style="width:100%;text-align:center">Cancelar edición</button>` : ''}`;
+    ${st.editing ? `<button class="link" id="cancelEdit" style="width:100%;text-align:center">Cancelar edición</button>` : ''}
+    ${!st.editing && st.step === 1 ? historyList(ctx, null) : ''}
+    ${st.draft.origDate ? `<button class="link" id="delCk" style="width:100%;text-align:center;color:var(--amber)">Borrar este control</button>` : ''}`;
 }
 
 export function bind(root, ctx) {
@@ -85,6 +89,7 @@ export function bind(root, ctx) {
   $('#skip', root)?.addEventListener('click', () => move(1));
   $('#cancelEdit', root)?.addEventListener('click', () => { ctx.state.ctl = null; ctx.render(); });
   $('#next', root).addEventListener('click', () => (st.step === STEPS.length ? save(ctx) : move(1)));
+  bindHistory(root, ctx);
 
   // Campos numéricos → borrador
   $$('[data-m]', root).forEach((inp) => inp.addEventListener('input', () => {
@@ -98,6 +103,21 @@ export function bind(root, ctx) {
   $$('[data-rating]', root).forEach((s) => bindSeg(s.parentElement, `[data-rating="${s.dataset.rating}"]`, (v) => { d.ratings[s.dataset.rating] = +v; }));
   $$('[data-adh]', root).forEach((s) => bindSeg(s.parentElement, `[data-adh="${s.dataset.adh}"]`, (v) => { d.adherence_days[s.dataset.adh] = v === 'plan'; }));
   $('#note', root)?.addEventListener('input', (e) => { d.note = e.target.value; });
+  $('#m-date', root)?.addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v > ctx.today()) { e.target.value = d.date; return; }
+    d.date = v;
+    // el peso es el de ese día: se carga el registrado (si lo hay) para no pisarlo con el de la fecha anterior
+    d.weight = ctx.store.day(v).weight ?? null;
+    ctx.render();
+  });
+  $('#delCk', root)?.addEventListener('click', () => {
+    if (!d.origDate || !confirm(`¿Borrar el control del ${fmtShort(d.origDate)}? Las fotos quedan en el historial del repo.`)) return;
+    ctx.store.updateDay(d.origDate, (day) => { delete day.checkin; }, `Borra control ${fmtShort(d.origDate)}`);
+    ctx.state.ctl = null;
+    toast('Control borrado');
+    ctx.render();
+  });
   bindSeg(root, '#decision', (v) => { d.decision.type = v; });
   $('#decisionText', root)?.addEventListener('input', (e) => { d.decision.text = e.target.value; });
 
@@ -110,7 +130,7 @@ export function bind(root, ctx) {
     if (label) label.textContent = 'Subiendo…';
     try {
       const bytes = await processPhoto(file);
-      const path = FILES.photo(d.date, pose);
+      const path = FILES.photo(d.photoDate, pose);
       forgetPhoto(path);
       await ctx.store.putPhoto(path, bytes, `Foto ${POSES.find((p) => p.id === pose)?.label.toLowerCase()} ${fmtShort(d.date)}`);
       if (!d.photos.includes(pose)) d.photos.push(pose);
@@ -142,7 +162,10 @@ function stepMeasures(ctx, d) {
   const dev = metrics.filter((m) => m.group === 'device');
   const sum = Object.values(d.skinfolds).reduce((a, b) => a + b, 0);
   return `<div class="card">
-      <div class="mfield" style="margin-bottom:12px"><label for="m-w">Peso (kg)</label><input id="m-w" inputmode="decimal" data-m="weight.w" value="${d.weight != null ? fmt(d.weight) : ''}" placeholder="—"><div class="d">Se guarda también como el peso del día</div></div>
+      <div class="g2" style="margin-bottom:12px">
+        <div class="mfield"><label for="m-date">Fecha del control</label><input id="m-date" type="date" max="${ctx.today()}" value="${d.date}" style="font-size:17px"><div class="d">Puedes cambiarla al corregir</div></div>
+        <div class="mfield"><label for="m-w">Peso (kg)</label><input id="m-w" inputmode="decimal" data-m="weight.w" value="${d.weight != null ? fmt(d.weight) : ''}" placeholder="—"><div class="d">Peso de ese día</div></div>
+      </div>
       <div class="meas">${per.map((m) => field(m, 'measures')).join('')}</div>
       ${sf.length ? `<details style="margin-top:14px" ${Object.keys(d.skinfolds).length ? 'open' : ''}><summary class="link" style="list-style:none;cursor:pointer">+ Pliegues (plicómetro, mm)</summary>
         <div class="meas" style="margin-top:10px">${sf.map((m) => field(m, 'skinfolds')).join('')}</div>
@@ -158,8 +181,8 @@ function stepPhotos(ctx, d) {
     const has = d.photos.includes(p.id);
     const prevHas = prev?.checkin?.photos?.includes(p.id);
     return `<div class="shot ${has ? 'done' : ''}">
-      ${has ? `<img class="photo-img" data-photo="${FILES.photo(d.date, p.id)}" alt="${p.label}" hidden>` : ''}
-      ${prevHas && !has ? `<div class="thumb"><img data-photo="${FILES.photo(prev.date, p.id)}" alt="Anterior" hidden></div>` : ''}
+      ${has ? `<img class="photo-img" data-photo="${FILES.photo(d.photoDate, p.id)}" alt="${p.label}" hidden>` : ''}
+      ${prevHas && !has ? `<div class="thumb"><img data-photo="${checkinPhotoPath(prev.date, prev.checkin, p.id)}" alt="Anterior" hidden></div>` : ''}
       ${has ? `<span class="ok">✓ ${p.label}</span>` : `<span class="cam">${icon.camera}</span><span class="lbl2">${p.label}</span>`}
       <input type="file" accept="image/*" capture="environment" data-pose="${p.id}" aria-label="Foto ${p.label}">
     </div>`;
@@ -261,7 +284,12 @@ function stepSummary(ctx, d) {
 async function save(ctx) {
   const st = ctx.state.ctl;
   const d = st.draft;
-  const checkin = { measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, ratings: d.ratings, adherence_days: d.adherence_days, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
+  const checkin = { measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence_days: d.adherence_days, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
+  const target = ctx.store.day(d.date);
+  if (d.date !== d.origDate && target.checkin && !confirm(`Ya hay un control el ${fmtShort(d.date)}. ¿Sustituirlo?`)) return;
+  if (d.origDate && d.origDate !== d.date) {
+    ctx.store.updateDay(d.origDate, (day) => { delete day.checkin; }, `Mueve control ${fmtShort(d.origDate)} → ${fmtShort(d.date)}`);
+  }
   ctx.store.updateDay(d.date, (day) => {
     if (d.weight != null) day.weight = d.weight;
     day.checkin = structuredClone(checkin);
@@ -290,7 +318,18 @@ function renderDone(ctx, date) {
       </table>
     </div>
     <button class="btn primary" id="copy">${icon.copy} Copiar resumen para Claude</button>
-    <div class="hint" style="text-align:center">También queda en <b>resumen.md</b> de tu repo de datos.</div>`;
+    <div class="hint" style="text-align:center;margin-bottom:12px">También queda en <b>resumen.md</b> de tu repo de datos.</div>
+    ${historyList(ctx, date)}`;
+}
+
+/** Lista de controles anteriores, cada uno editable. */
+function historyList(ctx, exclude) {
+  const days = ctx.store.allDays();
+  const list = Object.keys(days).filter((d) => days[d]?.checkin && d !== exclude).sort().reverse();
+  if (!list.length) return '';
+  return `<div class="card"><div class="ch"><h2>Controles anteriores</h2></div>
+    ${list.map((d) => { const c = days[d].checkin, m = c.measures || {}; return `<div class="row-edit"><div class="t"><b>${esc(fmtShort(d))}</b><span>${[days[d].weight != null && `${fmt(days[d].weight)} kg`, m.waist != null && `cintura ${fmt(m.waist)}`, c.photos?.length && `${c.photos.length} fotos`].filter(Boolean).join(' · ') || 'sin medidas'}</span></div><div class="ops"><button class="mini" data-editck="${d}" aria-label="Editar control del ${esc(fmtShort(d))}">${icon.edit}</button></div></div>`; }).join('')}
+  </div>`;
 }
 
 function labelOf(ctx, id) {
@@ -299,7 +338,16 @@ function labelOf(ctx, id) {
 
 function bindDone(root, ctx) {
   $('#edit', root)?.addEventListener('click', () => { ctx.state.ctl = { step: 1, draft: newDraft(ctx, thisWeekCheckin(ctx)), editing: true }; ctx.render(); });
+  bindHistory(root, ctx);
   $('#copy', root)?.addEventListener('click', () => copySummary(ctx));
+}
+
+function bindHistory(root, ctx) {
+  $$('[data-editck]', root).forEach((b) => b.addEventListener('click', () => {
+    ctx.state.ctl = { step: 1, draft: newDraft(ctx, b.dataset.editck), editing: true };
+    ctx.render();
+    window.scrollTo({ top: 0 });
+  }));
 }
 
 export async function copySummary(ctx) {

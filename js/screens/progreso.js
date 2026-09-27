@@ -3,7 +3,7 @@
 import { $, $$, esc, fmt, fmtK, signed, openSheet, bindSeg, icon, alertBox } from '../ui/ui.js';
 import { timeChart } from '../ui/charts.js';
 import { addDays, fmtShort } from '../dates.js';
-import { FILES, POSES, planFor } from '../model.js';
+import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
 import { rollingMean, whtrCategory, MDC } from '../engine/body.js';
 import { hydratePhotos } from '../photos.js';
@@ -98,7 +98,7 @@ export function render(ctx) {
     const cell = (d) => {
       const c = withPhotos.find((x) => x.date === d);
       const has = c.checkin.photos.includes(st.pose);
-      return `<div><div class="shot done">${has ? `<img class="photo-img" data-photo="${FILES.photo(d, st.pose)}" alt="" hidden>` : '<span class="lbl2" style="position:relative">Sin foto</span>'}</div>
+      return `<div><div class="shot done">${has ? `<img class="photo-img" data-photo="${checkinPhotoPath(d, c.checkin, st.pose)}" alt="" hidden>` : '<span class="lbl2" style="position:relative">Sin foto</span>'}</div>
         <div class="cap">${fmtShort(d)}<span>${c.weight != null ? fmt(c.weight) + ' kg' : ''}${c.checkin.measures?.waist != null ? ` · ${fmt(c.checkin.measures.waist)} cm` : ''}</span></div></div>`;
     };
     const sel = (id, v) => `<select class="inp sm" id="${id}">${dates.map((d) => `<option value="${d}" ${d === v ? 'selected' : ''}>${fmtShort(d)}</option>`).join('')}</select>`;

@@ -15,6 +15,11 @@ export const FILES = {
   photo: (date, pose) => `fotos/${date}/${pose}.jpg`,
 };
 
+/** Ruta de una foto de un control. Si el control se movió de fecha, las fotos siguen en su carpeta original. */
+export function checkinPhotoPath(date, checkin, pose) {
+  return FILES.photo(checkin?.photos_from || date, pose);
+}
+
 export const POSES = [
   { id: 'front', label: 'Frente' },
   { id: 'side_r', label: 'Perfil derecho' },
