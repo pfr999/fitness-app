@@ -1,17 +1,17 @@
 // Pantalla Hoy: subpestañas Día · Comidas · Entreno.
 
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, icon } from '../ui/ui.js';
-import { ring } from '../ui/charts.js';
 import { addDays, fmtShort, fmtLong, range } from '../dates.js';
-import { FILES, planFor, kcalTarget } from '../model.js';
+import { FILES, planFor, sumItems } from '../model.js';
 import { isDue } from './control.js';
+import * as meals from './meals.js';
 
 const SUBS = [['dia', 'Día'], ['comidas', 'Comidas'], ['entreno', 'Entreno']];
 
 export function render(ctx) {
   const sub = ctx.state.hoySub;
   const seg = `<div class="seg" id="hoySeg" style="margin-bottom:12px">${SUBS.map(([k, l]) => `<button data-v="${k}" class="${k === sub ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-  const body = sub === 'comidas' ? renderMeals(ctx) : sub === 'entreno' ? renderTraining(ctx) : renderDay(ctx);
+  const body = sub === 'comidas' ? meals.render(ctx) : sub === 'entreno' ? renderTraining(ctx) : renderDay(ctx);
   return seg + dateNav(ctx) + body;
 }
 
@@ -22,6 +22,7 @@ export function bind(root, ctx) {
   $('#toToday', root)?.addEventListener('click', () => { ctx.state.date = ctx.today(); ctx.render(); });
   if (ctx.state.hoySub === 'dia') bindDay(root, ctx);
   if (ctx.state.hoySub === 'entreno') bindTraining(root, ctx);
+  if (ctx.state.hoySub === 'comidas') meals.bind(root, ctx);
 }
 
 function dateNav(ctx) {
@@ -64,9 +65,9 @@ function renderDay(ctx) {
 
   <div class="quick">
     <button class="qk ${day.steps != null ? 'done' : ''}" data-open="daily"><span class="k">Pasos</span><span class="v num ${day.steps == null ? 'empty' : ''}">${day.steps != null ? fmtK(day.steps) : '+ Añadir'}</span></button>
-    <button class="qk ${day.sleep_h != null ? 'done' : ''}" data-open="daily"><span class="k">Sueño</span><span class="v num ${day.sleep_h == null ? 'empty' : ''}">${day.sleep_h != null ? fmt(day.sleep_h) + ' h' : '+ Añadir'}</span></button>
+    <button class="qk ${day.sleep_h != null || day.note ? 'done' : ''}" data-open="daily"><span class="k">Sueño</span><span class="v num ${day.sleep_h == null ? 'empty' : ''}">${day.sleep_h != null ? fmt(day.sleep_h) + ' h' : '+ Añadir'}</span></button>
+    <button class="qk ${day.meals?.length ? 'done' : ''}" id="goMeals"><span class="k">Comido</span><span class="v num ${day.meals?.length ? '' : 'empty'}">${day.meals?.length ? fmtK(sumItems(day.meals.flatMap((m) => m.items)).kcal) : 'Añadir'}</span></button>
     <button class="qk ${day.trained != null ? 'done' : ''}" id="toggleTrain"><span class="k">Entreno</span><span class="v ${day.trained == null ? 'empty' : ''}">${tr}</span></button>
-    <button class="qk ${day.note || day.wellness ? 'done' : ''}" data-open="daily"><span class="k">Más</span><span class="v empty">${day.note || day.wellness ? 'Editar' : 'Añadir'}</span></button>
   </div>
 
   ${supp.length ? `<div class="card"><div class="ch"><h2>Suplementos y medicación</h2><span class="aux">${[...taken].filter((n) => supp.some((s) => s.name === n)).length}/${supp.length}</span></div>
@@ -78,6 +79,7 @@ function renderDay(ctx) {
 function bindDay(root, ctx) {
   const date = ctx.state.date;
   $('#goControl', root)?.addEventListener('click', () => ctx.go('domingo'));
+  $('#goMeals', root)?.addEventListener('click', () => { ctx.state.hoySub = 'comidas'; ctx.render(); });
   const save = () => {
     const raw = $('#wIn', root).value;
     const w = num(raw);
@@ -145,35 +147,6 @@ function dailySheet(ctx, date) {
       });
     },
   });
-}
-
-// ---------------------------------------------------------------- Comidas
-function renderMeals(ctx) {
-  const date = ctx.state.date;
-  const v = planFor(ctx.store.get(FILES.plan), date);
-  if (!v) return '';
-  const day = ctx.store.day(date);
-  const kcal = kcalTarget(v, day.trained);
-  const dt = v.diet;
-  const label = day.trained === true ? 'Día de entreno' : day.trained === false ? 'Día de descanso' : 'Entreno sin marcar';
-  const meals = dt.meals || [];
-  return `<div class="card">
-      <div class="ch"><h2>Objetivo del día</h2><span class="badge ${day.trained === true ? 'g' : 'n'}">${label}</span></div>
-      <div class="ring-wrap">
-        ${ring({ value: 0, max: kcal, label: fmtK(kcal), sub: 'kcal objetivo' })}
-        <div class="macros">
-          <div class="mac"><div class="row"><b>Proteína</b><span>${fmtK(dt.protein_g)} g</span></div><div class="bar"><i style="width:100%"></i></div></div>
-          <div class="mac"><div class="row"><b>Carbohidratos</b><span>${fmtK(dt.carbs_g)} g</span></div><div class="bar"><i style="width:100%;background:var(--blue)"></i></div></div>
-          <div class="mac"><div class="row"><b>Grasas</b><span>${fmtK(dt.fat_g)} g</span></div><div class="bar"><i style="width:100%;background:var(--amber)"></i></div></div>
-        </div>
-      </div>
-      ${day.trained == null ? `<div class="hint">Marca en «Día» si entrenas hoy para ajustar las kcal (entreno ${fmtK(dt.kcal.train)} · descanso ${fmtK(dt.kcal.rest)}).</div>` : ''}
-    </div>
-    ${meals.length ? `<div class="card"><div class="ch"><h2>Comidas del plan</h2></div>
-      ${meals.map((m) => `<div class="meal"><span>${esc(m.slot)}</span><div class="por">${Object.entries(m.portions || {}).map(([k, n]) => `<span class="${esc(k)}">${esc(n)}${esc(k)}</span>`).join('')}</div></div>`).join('')}
-      <div class="muted small" style="margin-top:6px">Porciones · P proteína · C carbohidrato · G grasa</div></div>` : ''}
-    ${(dt.rules || []).length ? `<div class="card flat"><div class="muted small" style="font-weight:700;margin-bottom:6px">Reglas</div>${dt.rules.map((r) => `<div style="font-size:14px;margin-bottom:4px">${esc(r)}</div>`).join('')}</div>` : ''}
-    <div class="soon">${icon.info}<div>El registro de alimentos por gramos (buscador, productos de supermercado, escáner) llega en la fase 2. Mientras, para el cálculo del gasto se asume que sigues el plan.</div></div>`;
 }
 
 // ---------------------------------------------------------------- Entreno

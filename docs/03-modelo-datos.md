@@ -107,11 +107,14 @@ recomp-data/
 
 ## Base de alimentos (repo público de la app, estática)
 ```
-recomp-app/foods/
-  generic.json               # CIQUAL 2025 traducido y filtrado (~2.500 alimentos)
-  products/index.json        # ~25.000 productos más escaneados en España (OFF): nombre, marca, tienda, EAN, macros
-  products/synonyms.json     # tienda ↔ marca blanca, formatos, preparaciones
+fitness-app/foods/
+  generic.json    # CIQUAL 2025 traducido: [[id, nombre, alias|alias, kcal, p, c, g], …]  (3.286 · 230 KB)
+  products.json   # Open Food Facts, vendidos en España: [[ean, nombre, marca, tiendas, envase, kcal, p, c, g, escaneos], …]
+                  # (45.000 · 3,8 MB, ~1,1 MB comprimido)
+  meta.json       # fecha de generación, recuentos y licencias
 ```
+Los sinónimos (tienda ↔ marca blanca, formatos, preparaciones) están en `js/foods/search.js`.
+Se regenera con `tools/` (ver `tools/README.md`).
 Se descarga una vez y se guarda en IndexedDB. Lo que no está aquí se consulta en línea (API de
 Open Food Facts) y, si se usa, pasa a `foods.json` como alimento propio.
 
