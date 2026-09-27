@@ -366,7 +366,33 @@ function targetsSheet(ctx) {
 function historySheet(ctx) {
   const vs = [...plan(ctx).versions].sort((a, b) => (a.from < b.from ? 1 : a.from > b.from ? -1 : b.v - a.v));
   const cur = currentPlan(plan(ctx));
-  openSheet(`<h3>Historial del plan</h3><div class="tl" style="margin-top:16px">
-    ${vs.map((x, i) => `<div class="it ${x === cur || x.v === cur.v ? 'cur' : ''}"><div class="d">${esc(fmtShort(x.from))} · v${esc(x.v)}${x.v === cur.v ? ' · vigente' : ''}</div><b>${esc(x.reason || '—')}</b>${vs[i + 1] ? `<div class="x">${esc(diffText(vs[i + 1], x))}</div>` : ''}</div>`).join('')}
-  </div>`);
+  const canDelete = vs.length > 1;
+  openSheet(`<h3>Historial del plan</h3>
+    <div class="muted small" style="margin-top:2px">${canDelete ? 'Puedes borrar versiones de prueba. Si borras la vigente, pasa a regir la anterior.' : ''}</div>
+    <div class="tl" style="margin-top:16px">
+    ${vs.map((x, i) => `<div class="it ${x.v === cur.v ? 'cur' : ''}"><div class="row" style="align-items:flex-start">
+        <div style="flex:1;min-width:0"><div class="d">${esc(fmtShort(x.from))} · v${esc(x.v)}${x.v === cur.v ? ' · vigente' : ''}</div><b>${esc(x.reason || '—')}</b>${vs[i + 1] ? `<div class="x">${esc(diffText(vs[i + 1], x))}</div>` : ''}</div>
+        ${canDelete ? `<button class="mini danger" data-delv="${esc(x.v)}" aria-label="Borrar versión ${esc(x.v)}">${icon.trash}</button>` : ''}
+      </div></div>`).join('')}
+  </div>`, {
+    bind: (sh) => {
+      $$('[data-delv]', sh).forEach((b) => b.addEventListener('click', () => {
+        const v = +b.dataset.delv;
+        const x = vs.find((y) => y.v === v);
+        if (!confirm(`¿Borrar la versión v${v} del ${fmtShort(x.from)}${x.reason ? ` («${x.reason}»)` : ''}? No se puede deshacer desde la app (queda en el historial de GitHub).`)) return;
+        ctx.store.update(FILES.plan, (d) => {
+          const rest = d.versions.filter((y) => y.v !== v);
+          // Si se borra la versión más antigua, la siguiente pasa a cubrir desde esa fecha
+          // (así ningún día anterior se queda sin plan).
+          const first = rest.reduce((m, y) => (y.from < m.from ? y : m), rest[0]);
+          if (first && x.from < first.from) first.from = x.from;
+          return { ...d, versions: rest };
+        }, `Plan: borra v${v} (${x.reason || fmtShort(x.from)})`);
+        toast(`Versión v${v} borrada`);
+        writeSummary(ctx);
+        closeSheet();
+        ctx.render();
+      }));
+    },
+  });
 }
