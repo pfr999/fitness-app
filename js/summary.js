@@ -32,7 +32,7 @@ export function buildSummary(ctx) {
     if (L.projection?.days && L.goal) lines.push(`- Previsión (modelo de Hall, kcal del plan): ${f(L.goal)} kg hacia ${fmtShort(addDays(today, Math.round(L.projection.days)))}`);
   }
   lines.push('');
-  lines.push(`## Semana ${wk.week} (${fmtShort(wk.from)}–${fmtShort(wk.to)})`);
+  lines.push(`## Últimos 7 días (${fmtShort(wk.from)}–${fmtShort(wk.to)})`);
   lines.push(`- Pesadas: ${wk.weighIns}/7 · pasos media ${k(wk.steps)}${wk.targets.steps ? ` (objetivo ${k(wk.targets.steps)})` : ''} · sueño ${f(wk.sleep)} h · sesiones ${wk.sessions}${wk.targets.sessions ? `/${wk.targets.sessions}` : ''}`);
   for (const al of a.alerts || []) lines.push(`- Aviso: ${al.title}. ${al.text}`);
   lines.push('');

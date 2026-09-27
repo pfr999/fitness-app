@@ -1,7 +1,7 @@
 // Control semanal: medidas → fotos → cómo ha ido → resumen y decisión. Pasos saltables.
 
 import { $, $$, esc, fmt, fmtK, num, toast, openSheet, bindSeg, icon, alertBox, signed } from '../ui/ui.js';
-import { addDays, fmtShort, range, weekStart, weekday, daysBetween, fmtDayShort } from '../dates.js';
+import { addDays, fmtShort, range, lastWeekday, weekday, daysBetween, fmtDayShort } from '../dates.js';
 import { FILES, POSES, planFor } from '../model.js';
 import { analyze, weekSummary } from '../engine/analysis.js';
 import { MDC, isRealChange } from '../engine/body.js';
@@ -10,23 +10,29 @@ import { buildSummary, writeSummary } from '../summary.js';
 
 const STEPS = ['Medidas', 'Fotos', 'Cómo ha ido', 'Resumen y decisión'];
 
-/** ¿Toca control? Día de control sin control esta semana, o más de 8 días desde el último. */
+/** Inicio del periodo de control actual: el último día de control (p. ej. domingo) hasta hoy. */
+function periodStart(ctx) {
+  const cfg = ctx.store.get(FILES.config) || {};
+  return lastWeekday(ctx.today(), cfg.checkin_weekday ?? 0);
+}
+
+/** ¿Toca control? Hoy es el día de control y aún no hay control en este periodo, o hace más de 8 días del último. */
 export function isDue(ctx) {
   const today = ctx.today();
   const cfg = ctx.store.get(FILES.config) || {};
   const days = ctx.store.allDays();
-  const checkins = Object.keys(days).filter((d) => days[d]?.checkin).sort();
-  const last = checkins[checkins.length - 1];
-  const thisWeek = last && last >= weekStart(today);
-  if (thisWeek) return false;
+  const last = Object.keys(days).filter((d) => d <= today && days[d]?.checkin).sort().pop();
+  if (!last) return true; // aún no hay ningún control: el primero se puede hacer cualquier día
+  if (last >= periodStart(ctx)) return false;
   if (weekday(today) === (cfg.checkin_weekday ?? 0)) return true;
   return !!last && daysBetween(last, today) > 8;
 }
 
+/** Control ya hecho en el periodo actual (se puede hacer cualquier día; cuenta hasta el siguiente día de control). */
 function thisWeekCheckin(ctx) {
-  const today = ctx.today();
+  const today = ctx.today(), from = periodStart(ctx);
   const days = ctx.store.allDays();
-  return Object.keys(days).filter((d) => d >= weekStart(today) && d <= today && days[d]?.checkin).sort().pop() || null;
+  return Object.keys(days).filter((d) => d >= from && d <= today && days[d]?.checkin).sort().pop() || null;
 }
 
 function prevCheckin(ctx, date) {
@@ -168,7 +174,7 @@ function prevCheckinWithPhotos(ctx, date) {
 }
 
 function stepWeek(ctx, d) {
-  const from = weekStart(d.date);
+  const from = addDays(d.date, -6);
   const days = ctx.store.allDays();
   const unlogged = range(from, d.date).filter((x) => days[x]?.meals_complete !== true);
   const rating = (id, label, opts) => `<div class="field"><label>${label}</label><div class="chipset" data-rating="${id}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${d.ratings[id] === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
@@ -225,7 +231,7 @@ function stepSummary(ctx, d) {
 
   const row = (l, real, obj, good) => `<tr><td>${l}</td><td class="n ${good == null ? '' : good ? 'up' : 'warn'}">${real}</td><td class="o">${obj}</td></tr>`;
   return `<div class="sum-hero">
-      <div class="k">Semana ${wk.week} · ${fmtShort(wk.from)}–${fmtShort(wk.to)}</div>
+      <div class="k">Últimos 7 días · ${fmtShort(wk.from)}–${fmtShort(wk.to)}</div>
       <div class="big num">${loss != null ? `${fmt(-loss, 2)} %/sem` : '—'}</div>
       <div class="small" style="opacity:.75;margin-bottom:12px">${note}</div>
       <div class="g2">

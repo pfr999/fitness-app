@@ -1,7 +1,7 @@
 // Análisis: une los documentos del repo de datos con el motor y devuelve todo lo derivado.
 // Es puro: no toca red ni DOM.
 
-import { addDays, range, daysBetween, weekStart, isoWeek } from '../dates.js';
+import { addDays, range, daysBetween, isoWeek } from '../dates.js';
 import { planFor, intakeFor, kcalTarget } from '../model.js';
 import { kalmanTrend, weeklyRate } from './trend.js';
 import { adaptiveTDEE, hallProjection, energyDensity, rmr } from './energy.js';
@@ -154,9 +154,9 @@ function alertsFor({ config, days, span, trend, rate, rateTarget, version, today
 const thousands = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const fmt = (n, d = 1) => n.toFixed(d).replace('.', ',');
 
-/** Resumen de una semana (lunes-domingo que contiene `date`). */
+/** Resumen de los 7 días que terminan en `date` (el periodo que revisa un control). */
 export function weekSummary({ days, plan }, date) {
-  const from = weekStart(date), to = addDays(from, 6);
+  const from = addDays(date, -6), to = date;
   const ds = range(from, to);
   const vals = (k) => ds.map((d) => days[d]?.[k]).filter((v) => v != null);
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);

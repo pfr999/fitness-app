@@ -67,6 +67,12 @@ export function fmtDayShort(s) {
   return `${DAYS_SHORT[d.getDay()]} ${d.getDate()}`;
 }
 
+/** Último día con ese día de la semana (0 = domingo) en o antes de s. */
+export function lastWeekday(s, wd) {
+  const cur = weekday(s);
+  return addDays(s, -((cur - wd + 7) % 7));
+}
+
 /** Número de semana ISO. */
 export function isoWeek(s) {
   const d = parseISO(s);
