@@ -33,6 +33,7 @@ Perfil y ajustes (fórmulas, métricas registradas, token) se abren desde el enc
 ## Registro de comidas
 - Por cada comida del plan: buscar alimento → gramos → se suman kcal, proteína, carbohidratos y grasas.
 - Totales por comida y por día **frente al objetivo de ese día** (entreno o descanso) en gramos. El objetivo de cada comida se deriva de las porciones del plan.
+- **Botón «Día completo ✓»** en Comidas: confirma que lo apuntado es todo lo que se comió ese día (`meals_complete`). Solo esos días usan lo registrado para el gasto; se puede desmarcar.
 - **Un día sin registrar, o a medias, no significa que se comió mal**: se asume el plan hasta que el domingo se confirme (o no) la adherencia de esos días.
 - Atajos: recientes/frecuentes, copiar comida de ayer, recetas guardadas, entrada manual de macros.
 - Búsqueda local e instantánea sobre `alimentos.json` (sin conexión). Porciones del plan solo como ayuda visual.
