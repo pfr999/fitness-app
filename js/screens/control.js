@@ -101,7 +101,18 @@ export function bind(root, ctx) {
     if (sum) sum.textContent = fmt(Object.values(d.skinfolds).reduce((a, b) => a + b, 0)) + ' mm';
   }));
   $$('[data-rating]', root).forEach((s) => bindSeg(s.parentElement, `[data-rating="${s.dataset.rating}"]`, (v) => { d.ratings[s.dataset.rating] = +v; }));
-  $$('[data-adh]', root).forEach((s) => bindSeg(s.parentElement, `[data-adh="${s.dataset.adh}"]`, (v) => { d.adherence_days[s.dataset.adh] = v === 'plan'; }));
+  $$('[data-adh]', root).forEach((s) => bindSeg(s.parentElement, `[data-adh="${s.dataset.adh}"]`, (v) => {
+    const day = s.dataset.adh;
+    const box = $(`[data-adhdiff="${day}"]`, root);
+    box.hidden = v !== 'diff';
+    if (v === 'yes') delete d.adherence_days[day];
+    else if (v === 'unk') d.adherence_days[day] = false;
+    else { const n = num($(`[data-adhval="${day}"]`, root).value.replace('+', '')); d.adherence_days[day] = n ?? 0; $(`[data-adhval="${day}"]`, root).focus(); }
+  }));
+  $$('[data-adhval]', root).forEach((inp) => inp.addEventListener('input', () => {
+    const n = num(inp.value.replace('+', '').replace('−', '-'));
+    d.adherence_days[inp.dataset.adhval] = n ?? 0;
+  }));
   $('#note', root)?.addEventListener('input', (e) => { d.note = e.target.value; });
   $('#m-date', root)?.addEventListener('change', (e) => {
     const v = e.target.value;
@@ -202,13 +213,15 @@ function stepWeek(ctx, d) {
   const unlogged = range(from, d.date).filter((x) => days[x]?.meals_complete !== true);
   const rating = (id, label, opts) => `<div class="field"><label>${label}</label><div class="chipset" data-rating="${id}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${d.ratings[id] === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
   return `<div class="card">
-      <div class="ch"><h2>Adherencia a la dieta</h2><span class="aux">días sin registro</span></div>
-      <div class="muted small" style="margin:-4px 0 8px">Esos días se asumió el plan para el cálculo del gasto. Marca los que te saliste; se excluyen.</div>
-      ${unlogged.map((x) => { const v = d.adherence_days[x]; return `<div class="meal"><span>${esc(fmtDayShort(x))}</span><div class="seg" data-adh="${x}" style="width:200px"><button data-v="plan" class="${v !== false ? 'on' : ''}">Según plan</button><button data-v="off" class="${v === false ? 'on' : ''}">Me salí</button></div></div>`; }).join('')}
+      <div class="ch"><h2>¿Comiste según el plan?</h2></div>
+      <div class="muted small" style="margin:-4px 0 8px">Sirve para calcular tu gasto real. <b>Sí</b>: comiste lo del plan. <b>Distinto</b>: pon la diferencia aproximada (+300 si te pasaste, −200 si comiste menos). <b>No sé</b>: ese día no se usa en el cálculo.</div>
+      ${unlogged.map((x) => { const v = d.adherence_days[x]; const mode = typeof v === 'number' ? 'diff' : v === false ? 'unk' : 'yes'; return `<div class="row-edit" style="grid-template-columns:64px 1fr"><b style="font-size:14px">${esc(fmtDayShort(x))}</b>
+        <div class="stack" style="gap:6px"><div class="seg" data-adh="${x}"><button data-v="yes" class="${mode === 'yes' ? 'on' : ''}">Sí</button><button data-v="diff" class="${mode === 'diff' ? 'on' : ''}">Distinto</button><button data-v="unk" class="${mode === 'unk' ? 'on' : ''}">No sé</button></div>
+        <div class="unit-wrap" data-adhdiff="${x}" ${mode === 'diff' ? '' : 'hidden'}><input class="inp sm" inputmode="text" data-adhval="${x}" value="${typeof v === 'number' ? (v > 0 ? '+' : '') + v : ''}" placeholder="+300"><span class="u">kcal</span></div></div></div>`; }).join('')}
     </div>
     <div class="card"><div class="stack">
-      ${rating('diet', 'Adherencia a la dieta', [[1, 'Mal'], [2, 'Regular'], [3, 'Bien'], [4, 'Perfecta']])}
-      ${rating('training', 'Adherencia al entreno', [[1, 'Mal'], [2, 'Regular'], [3, 'Bien'], [4, 'Perfecta']])}
+      ${rating('diet', 'Valoración general de la dieta', [[1, 'Mal'], [2, 'Regular'], [3, 'Bien'], [4, 'Perfecta']])}
+      ${rating('training', 'Valoración general del entreno', [[1, 'Mal'], [2, 'Regular'], [3, 'Bien'], [4, 'Perfecta']])}
       ${rating('sleep', 'Calidad del sueño', [[1, 'Baja'], [2, 'Media'], [3, 'Alta']])}
       ${rating('stress', 'Estrés', [[1, 'Bajo'], [2, 'Medio'], [3, 'Alto']])}
       ${rating('energy', 'Energía', [[1, 'Baja'], [2, 'Media'], [3, 'Alta']])}

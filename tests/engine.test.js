@@ -157,6 +157,7 @@ test('kcal objetivo e ingesta asumida', () => {
   close(kcalTarget(v, undefined), (4 * 2800 + 3 * 2500) / 7, 1e-9);
   assert.deepEqual(intakeFor('2026-09-01', { trained: true }, v), { kcal: 2800, assumed: true });
   assert.deepEqual(intakeFor('2026-09-01', { trained: true }, v, { '2026-09-01': false }), { kcal: null, assumed: false });
+  assert.deepEqual(intakeFor('2026-09-01', { trained: true }, v, { '2026-09-01': 300 }), { kcal: 3100, assumed: false }, 'diferencia declarada en el control');
   const day = { meals_complete: true, meals: [{ slot: 'Desayuno', items: [{ g: 200, per100: { kcal: 100, p: 10, c: 10, f: 1 } }] }] };
   assert.deepEqual(intakeFor('2026-09-01', day, v), { kcal: 200, assumed: false });
   const s = sumItems(day.meals[0].items);

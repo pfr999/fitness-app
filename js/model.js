@@ -150,11 +150,14 @@ export function sumItems(items = []) {
 /**
  * Ingesta del día para el TDEE.
  * - meals_complete === true → suma registrada
- * - confirmado "me salí" en el domingo → null (excluido)
+ * - en el control: número (p. ej. +300) → kcal del plan + esa diferencia
+ * - en el control: "no sé" (false) → null (el día no se usa)
  * - en otro caso → kcal del plan (no registrar ≠ comer mal)
  */
 export function intakeFor(date, day, version, adherence = {}) {
-  if (adherence[date] === false) return { kcal: null, assumed: false };
+  const a = adherence[date];
+  if (a === false) return { kcal: null, assumed: false };
+  if (typeof a === 'number' && !(day?.meals_complete === true)) return { kcal: kcalTarget(version, day?.trained) + a, assumed: false };
   if (day?.meals_complete === true && day.meals?.length) {
     const kcal = day.meals.reduce((a, m) => a + sumItems(m.items).kcal, 0);
     return { kcal, assumed: false };

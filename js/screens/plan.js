@@ -59,12 +59,6 @@ export function render(ctx) {
       <div style="flex:1;min-width:0"><b style="font-size:15px">${esc([v.phase && `Fase ${v.phase}`, v.micro && `Micro ${v.micro}`].filter(Boolean).join(' · ') || 'Plan actual')}</b><div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Desde ${esc(fmtShort(v.from))} ${prevReason}</div></div>
       <button class="link" id="history">Historial</button>
     </div>
-    <div class="qa">
-      <button data-quick="kcal">${icon.flame}Kcal</button>
-      <button data-quick="targets">${icon.target}Objetivos</button>
-      <button data-quick="day">${icon.dumbbell}Rutina</button>
-      <button data-quick="supp">${icon.pill}Suplem.</button>
-    </div>
     <div class="seg" id="planSeg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-v="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const body = tab === 'dieta' ? renderDiet(v) : tab === 'supl' ? renderSupp(v) : tab === 'obj' ? renderTargets(ctx, v) : renderRoutine(ctx, v);
   return head + body;
@@ -85,7 +79,12 @@ function renderRoutine(ctx, v) {
 function renderDiet(v) {
   const d = v.diet;
   const kcalMacros = d.protein_g * 4 + d.carbs_g * 4 + d.fat_g * 9;
-  return `<div class="card"><div class="ch"><h2>Objetivos diarios</h2><button class="link" data-quick="diet">Editar</button></div>
+  return `<div class="g2" style="margin-bottom:12px">
+      <button class="btn primary" data-quick="kcal">${icon.flame} Ajustar kcal</button>
+      <button class="btn secondary" data-quick="diet">${icon.edit} Editar dieta</button>
+    </div>
+    <div class="hint" style="margin:-4px 0 12px">«Ajustar kcal» te enseña el ritmo previsto antes de guardar. «Editar dieta» cambia macros, comidas y reglas.</div>
+    <div class="card"><div class="ch"><h2>Objetivos diarios</h2></div>
       <div class="g2">
         <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Día de entreno</div><div style="font-size:24px;font-weight:800" class="num">${fmtK(d.kcal.train)}</div></div>
         <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Día de descanso</div><div style="font-size:24px;font-weight:800" class="num">${fmtK(d.kcal.rest)}</div></div>
@@ -147,8 +146,6 @@ export function bind(root, ctx) {
     if (q === 'kcal') kcalSheet(ctx);
     else if (q === 'targets') targetsSheet(ctx);
     else if (q === 'diet') dietSheet(ctx);
-    else if (q === 'day') { ctx.state.planTab = 'rutina'; ctx.render(); daySheet(ctx, currentPlan(plan(ctx)).routine.days.length ? Math.min(ctx.state.planDay || 0, currentPlan(plan(ctx)).routine.days.length - 1) : -1); }
-    else if (q === 'supp') { ctx.state.planTab = 'supl'; ctx.render(); }
   }));
 }
 
@@ -368,7 +365,7 @@ function historySheet(ctx) {
   const cur = currentPlan(plan(ctx));
   const canDelete = vs.length > 1;
   openSheet(`<h3>Historial del plan</h3>
-    <div class="muted small" style="margin-top:2px">${canDelete ? 'Puedes borrar versiones de prueba. Si borras la vigente, pasa a regir la anterior.' : ''}</div>
+    <div class="muted small" style="margin-top:2px">Cada día que cambias algo del plan se crea una versión; los cambios del mismo día se juntan en la misma. ${canDelete ? 'Puedes borrar versiones de prueba: si borras la vigente, pasa a regir la anterior.' : 'Ahora solo hay una, así que no se puede borrar (siempre tiene que haber un plan). Si mañana cambias algo, se creará la siguiente.'}</div>
     <div class="tl" style="margin-top:16px">
     ${vs.map((x, i) => `<div class="it ${x.v === cur.v ? 'cur' : ''}"><div class="row" style="align-items:flex-start">
         <div style="flex:1;min-width:0"><div class="d">${esc(fmtShort(x.from))} · v${esc(x.v)}${x.v === cur.v ? ' · vigente' : ''}</div><b>${esc(x.reason || '—')}</b>${vs[i + 1] ? `<div class="x">${esc(diffText(vs[i + 1], x))}</div>` : ''}</div>
