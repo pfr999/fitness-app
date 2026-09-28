@@ -6,7 +6,7 @@ import { kalmanTrend, emaTrend, weeklyRate } from '../js/engine/trend.js';
 import { adaptiveTDEE, hallProjection, energyDensity, rmr } from '../js/engine/energy.js';
 import { faulkner, navyMale, rfm, whtr, whtrCategory, ffmi, sumSkinfolds, rollingMean, isRealChange } from '../js/engine/body.js';
 import { rateTargetForBodyFat, rpRecommendation, e1rm } from '../js/engine/targets.js';
-import { planFor, newPlanVersion, kcalTarget, intakeFor, sumItems, monthsBetween, emptyPlan } from '../js/model.js';
+import { planFor, newPlanVersion, kcalTarget, intakeFor, sumItems, monthsBetween, emptyPlan, versionNumber } from '../js/model.js';
 import { analyze, adherenceMap } from '../js/engine/analysis.js';
 import { simulate } from '../js/demo.js';
 
@@ -154,6 +154,11 @@ test('versiones del plan', () => {
   // dos ajustes el mismo día → una sola versión
   plan = newPlanVersion(plan, { from: '2026-09-01', reason: 'otro', mutate: (v) => { v.targets.steps = 12000; } });
   assert.equal(plan.versions.filter((v) => v.from === '2026-09-01').length, 1);
+  const same = plan.versions.find((v) => v.from === '2026-09-01');
+  assert.equal(same.v, 2, 'el mismo día conserva su número de versión');
+  assert.deepEqual(same.changes.map((c) => c.reason), ['-200 kcal', 'otro'], 'cada cambio del día queda anotado');
+  assert.equal(same.diet.kcal.train, 2600, 'los cambios del día se acumulan');
+  assert.equal(versionNumber(plan, same), 2);
 });
 
 test('kcal objetivo e ingesta asumida', () => {

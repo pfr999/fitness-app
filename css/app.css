@@ -451,3 +451,5 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 .toast span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dayrow{grid-template-columns:72px 50px 1fr 46px 46px}
 .dayrow .dd b{white-space:nowrap}
+
+.chipset.sm button{min-height:34px;padding:0 10px;font-size:12.5px;border-radius:10px}

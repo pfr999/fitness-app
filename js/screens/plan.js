@@ -2,10 +2,11 @@
 
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, segValue, icon } from '../ui/ui.js';
 import { addDays, fmtShort } from '../dates.js';
-import { FILES, currentPlan, newPlanVersion, kcalTarget } from '../model.js';
+import { FILES, currentPlan, newPlanVersion, kcalTarget, versionNumber } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
 import { writeSummary } from '../summary.js';
 import { exercisesOf, musclesLine, datalist, assignSheet, volumeBars } from './exercises.js';
+import { MUSCLES } from '../training/catalog.js';
 import { resolveExercise, plannedVolume } from '../engine/training.js';
 
 const TABS = [['rutina', 'Rutina'], ['dieta', 'Dieta'], ['supl', 'Suplem.'], ['obj', 'Objetivos']];
@@ -57,7 +58,7 @@ export function render(ctx) {
   const tab = ctx.state.planTab || 'rutina';
   const prevReason = v.reason ? `“${esc(v.reason)}”` : '';
   const head = `<div class="card ver">
-      <div class="vi">v${esc(v.v)}</div>
+      <div class="vi">v${versionNumber(doc, v)}</div>
       <div style="flex:1;min-width:0"><b style="font-size:15px">${esc([v.phase && `Fase ${v.phase}`, v.micro && `Micro ${v.micro}`].filter(Boolean).join(' · ') || 'Plan actual')}</b><div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Desde ${esc(fmtShort(v.from))} ${prevReason}</div></div>
       <button class="link" id="history">Historial</button>
     </div>
@@ -273,13 +274,27 @@ function daySheet(ctx, idx) {
         <div class="unit-wrap"><input class="inp sm" data-f="rpe" inputmode="decimal" value="${x.rpe ?? ''}" placeholder="8"><span class="u">RPE</span></div>
       </div>
       <input class="inp sm" data-f="note" value="${esc(x.note || '')}" placeholder="Indicación (opcional)" style="margin-top:6px">
+      <div class="musbox" data-muscles='${esc(JSON.stringify(x._muscles || {}))}' data-custom="${x._custom ? 1 : ''}">${musBox(x)}</div>
     </div>`;
+  // Músculos del ejercicio: si el catálogo lo reconoce, se muestran (y se pueden cambiar);
+  // si no, se marcan aquí mismo tocando cada músculo (1 toque directo, 2 indirecto ½, 3 quitar).
+  const musBox = (x) => {
+    const ex = x.name ? resolveExercise(x.name, exercisesOf(ctx)) : null;
+    const m = x._custom ? x._muscles || {} : ex?.muscles || {};
+    const showChips = x._custom || (!ex && x.name);
+    const chips = MUSCLES.map(([k, l]) => `<button type="button" data-mk="${k}" class="${m[k] ? 'on' : ''}" style="${m[k] === 0.5 ? 'opacity:.7' : ''}">${l}${m[k] === 0.5 ? ' ½' : ''}</button>`).join('');
+    const line = !x.name ? '<span class="muted">Escribe el ejercicio y verás sus músculos</span>'
+      : x._custom ? `<b>Tus músculos:</b> ${Object.keys(m).length ? esc(musclesLine({ muscles: m })) : '<span class="warn">marca al menos uno</span>'}`
+      : ex ? `${esc(musclesLine(ex))} · <button type="button" class="link" data-musedit style="padding:0">cambiar</button>`
+      : '<span class="warn">No está en el catálogo: marca los músculos que trabaja</span>';
+    return `<div class="small" style="margin-top:8px;font-weight:600;color:var(--ink-2)">${line}</div>${showChips ? `<div class="chipset sm" style="margin-top:6px">${chips}</div><div class="hint" style="margin-top:4px">1 toque: directo · 2: indirecto (½) · 3: quitar</div>` : ''}`;
+  };
   openSheet(`<h3>${isNew ? 'Nuevo día' : `Editar ${esc(day.name)}`}</h3>
     <div class="stack" style="margin-top:12px">
       <div class="field"><label for="dayName">Nombre del día</label><input class="inp" id="dayName" value="${esc(day.name)}"></div>
       ${datalist(ctx)}
       <div id="items">${day.items.map(itemRow).join('')}</div>
-      <div class="hint" style="margin-top:-4px">Al escribir te sugiere ejercicios del catálogo (ya saben qué músculos trabajan). Si pones uno que no está, luego podrás asignarle los músculos.</div>
+      <div class="hint" style="margin-top:-4px">Al escribir te sugiere ejercicios del catálogo, que ya saben qué músculos trabajan. Si escribes uno que no está, marca sus músculos debajo.</div>
       <button class="btn secondary sm" id="addItem" type="button">${icon.plus} Añadir ejercicio</button>
       ${reasonField}
       <div class="sheet-actions"><button class="btn primary" id="daySave">Guardar nueva versión</button></div>
@@ -291,17 +306,66 @@ function daySheet(ctx, idx) {
         const lo = int(g('lo')), hi = int(g('hi'));
         const nm = g('name').trim();
         const ex = resolveExercise(nm, exercisesOf(ctx));
-        return { name: nm, ...(ex ? { ex: ex.id } : {}), sets: int(g('sets')) || 0, reps: [lo ?? hi ?? 0, hi ?? lo ?? 0], rpe: num(g('rpe')) ?? undefined, note: g('note').trim() || undefined };
+        const box = $('.musbox', row);
+        const custom = box.dataset.custom === '1' || (!ex && !!nm);
+        const muscles = JSON.parse(box.dataset.muscles || '{}');
+        return { name: nm, ...(ex ? { ex: ex.id } : {}), sets: int(g('sets')) || 0, reps: [lo ?? hi ?? 0, hi ?? lo ?? 0], rpe: num(g('rpe')) ?? undefined, note: g('note').trim() || undefined, _custom: custom, _muscles: muscles };
       });
       const redraw = (items) => { $('#items', sh).innerHTML = items.map(itemRow).join(''); bindRows(); };
       const bindRows = () => {
+        $$('[data-item]', sh).forEach((row) => {
+          const box = $('.musbox', row);
+          const repaint = () => {
+            const it = { name: $('[data-f="name"]', row).value.trim(), _custom: box.dataset.custom === '1', _muscles: JSON.parse(box.dataset.muscles || '{}') };
+            box.innerHTML = musBox(it);
+            bindBox();
+          };
+          const bindBox = () => {
+            $('[data-musedit]', box)?.addEventListener('click', () => {
+              const ex = resolveExercise($('[data-f="name"]', row).value.trim(), exercisesOf(ctx));
+              box.dataset.custom = '1';
+              box.dataset.muscles = JSON.stringify(ex?.muscles || {});
+              repaint();
+            });
+            $$('[data-mk]', box).forEach((b) => b.addEventListener('click', () => {
+              const m = JSON.parse(box.dataset.muscles || '{}'), k = b.dataset.mk;
+              if (!m[k]) m[k] = 1; else if (m[k] === 1) m[k] = 0.5; else delete m[k];
+              box.dataset.muscles = JSON.stringify(m);
+              box.dataset.custom = '1';
+              repaint();
+            }));
+          };
+          bindBox();
+          let t;
+          $('[data-f="name"]', row).addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { if (box.dataset.custom !== '1') repaint(); }, 250); });
+          $('[data-f="name"]', row).addEventListener('change', () => { if (box.dataset.custom !== '1') repaint(); });
+        });
         $$('[data-del]', sh).forEach((b) => b.addEventListener('click', () => { const it = collect(); it.splice(+b.dataset.del, 1); redraw(it); }));
         $$('[data-up]', sh).forEach((b) => b.addEventListener('click', () => { const i = +b.dataset.up; if (!i) return; const it = collect(); [it[i - 1], it[i]] = [it[i], it[i - 1]]; redraw(it); }));
       };
       bindRows();
       $('#addItem', sh).addEventListener('click', () => { redraw([...collect(), { name: '', sets: 3, reps: [8, 10], rpe: 8 }]); $$('[data-item]', sh).pop()?.querySelector('[data-f="name"]').focus(); });
       $('#daySave', sh).addEventListener('click', () => {
-        const next = { name: $('#dayName', sh).value.trim() || day.name, items: collect().filter((x) => x.name) };
+        const items = collect().filter((x) => x.name);
+        const noMuscles = items.filter((x) => x._custom && !Object.values(x._muscles).includes(1));
+        if (noMuscles.length && !confirm(`${noMuscles.map((x) => x.name).join(', ')}: sin músculo directo marcado. No contarán en el volumen. ¿Guardar igualmente?`)) return;
+        // ejercicios con músculos propios → exercises.json (se reconocen por nombre en adelante)
+        const customs = items.filter((x) => x._custom && Object.values(x._muscles).includes(1));
+        if (customs.length) {
+          ctx.store.update(FILES.exercises, (doc) => {
+            doc = doc && typeof doc === 'object' ? doc : {};
+            doc.items ||= [];
+            for (const c of customs) {
+              const prev = doc.items.find((e) => e.name.toLowerCase() === c.name.toLowerCase());
+              const id = prev?.id || `mine:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+              c.ex = id;
+              doc.items = [...doc.items.filter((e) => e.id !== id), { id, name: c.name, muscles: c._muscles }];
+            }
+            return doc;
+          }, `Ejercicios propios: ${customs.map((c) => c.name).join(', ')}`);
+        }
+        const clean = items.map(({ _custom, _muscles, ...x }) => x);
+        const next = { name: $('#dayName', sh).value.trim() || day.name, items: clean };
         const ok = savePlan(ctx, (p) => { if (isNew) p.routine.days.push(next); else p.routine.days[idx] = next; }, $('#why', sh).value);
         if (ok) { if (isNew) ctx.state.planDay = v.routine.days.length; closeSheet(); ctx.render(); }
       });
@@ -380,18 +444,21 @@ function historySheet(ctx) {
   const cur = currentPlan(plan(ctx));
   const canDelete = vs.length > 1;
   openSheet(`<h3>Historial del plan</h3>
-    <div class="muted small" style="margin-top:2px">Cada día que cambias algo del plan se crea una versión; los cambios del mismo día se juntan en la misma. ${canDelete ? 'Puedes borrar versiones de prueba: si borras la vigente, pasa a regir la anterior.' : 'Ahora solo hay una, así que no se puede borrar (siempre tiene que haber un plan). Si mañana cambias algo, se creará la siguiente.'}</div>
+    <div class="muted small" style="margin-top:2px">Una versión por día en que cambias el plan, con cada cambio anotado. ${canDelete ? 'Puedes borrar una versión entera: si borras la vigente, pasa a regir la anterior.' : 'Solo hay una versión, así que no se puede borrar.'}</div>
     <div class="tl" style="margin-top:16px">
-    ${vs.map((x, i) => `<div class="it ${x.v === cur.v ? 'cur' : ''}"><div class="row" style="align-items:flex-start">
-        <div style="flex:1;min-width:0"><div class="d">${esc(fmtShort(x.from))} · v${esc(x.v)}${x.v === cur.v ? ' · vigente' : ''}</div><b>${esc(x.reason || '—')}</b>${vs[i + 1] ? `<div class="x">${esc(diffText(vs[i + 1], x))}</div>` : ''}</div>
-        ${canDelete ? `<button class="mini danger" data-delv="${esc(x.v)}" aria-label="Borrar versión ${esc(x.v)}">${icon.trash}</button>` : ''}
-      </div></div>`).join('')}
+    ${vs.map((x, i) => { const n = versionNumber(plan(ctx), x); const ch = x.changes?.length ? x.changes : [{ at: null, reason: x.reason }];
+      return `<div class="it ${x.v === cur.v ? 'cur' : ''}"><div class="row" style="align-items:flex-start">
+        <div style="flex:1;min-width:0"><div class="d">${esc(fmtShort(x.from))} · v${n}${x.v === cur.v ? ' · vigente' : ''} · ${ch.length} ${ch.length === 1 ? 'cambio' : 'cambios'}</div>
+          ${ch.slice().reverse().map((c) => `<div style="margin-top:4px"><b style="font-size:14px">${esc(c.reason || '—')}</b>${c.at ? ` <span class="muted small">${esc(new Date(c.at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }))}</span>` : ''}</div>`).join('')}
+          ${vs[i + 1] ? `<div class="x" style="margin-top:4px">Respecto a v${n - 1}: ${esc(diffText(vs[i + 1], x) || 'sin cambios')}</div>` : ''}</div>
+        ${canDelete ? `<button class="mini danger" data-delv="${esc(x.v)}" aria-label="Borrar versión ${n}">${icon.trash}</button>` : ''}
+      </div></div>`; }).join('')}
   </div>`, {
     bind: (sh) => {
       $$('[data-delv]', sh).forEach((b) => b.addEventListener('click', () => {
         const v = +b.dataset.delv;
         const x = vs.find((y) => y.v === v);
-        if (!confirm(`¿Borrar la versión v${v} del ${fmtShort(x.from)}${x.reason ? ` («${x.reason}»)` : ''}? No se puede deshacer desde la app (queda en el historial de GitHub).`)) return;
+        if (!confirm(`¿Borrar la versión del ${fmtShort(x.from)} con todos sus cambios? No se puede deshacer desde la app (queda en el historial de GitHub).`)) return;
         ctx.store.update(FILES.plan, (d) => {
           const rest = d.versions.filter((y) => y.v !== v);
           // Si se borra la versión más antigua, la siguiente pasa a cubrir desde esa fecha
@@ -400,7 +467,7 @@ function historySheet(ctx) {
           if (first && x.from < first.from) first.from = x.from;
           return { ...d, versions: rest };
         }, `Plan: borra v${v} (${x.reason || fmtShort(x.from)})`);
-        toast(`Versión v${v} borrada`);
+        toast('Versión borrada');
         writeSummary(ctx);
         closeSheet();
         ctx.render();

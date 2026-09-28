@@ -101,14 +101,27 @@ export function currentPlan(planDoc) {
 }
 
 /** Nueva versión a partir de la vigente, con los cambios que aplique `mutate`. */
-export function newPlanVersion(planDoc, { from = today(), reason = '', mutate }) {
+export function newPlanVersion(planDoc, { from = today(), reason = '', mutate, at = new Date().toISOString() }) {
   const base = structuredClone(currentPlan(planDoc));
-  const v = Math.max(0, ...planDoc.versions.map((x) => x.v)) + 1;
-  const next = { ...base, v, from, reason };
+  const same = planDoc.versions.find((x) => x.from === from);
+  const change = { at, reason };
+  let next;
+  if (same) {
+    // Varios cambios el mismo día = una sola versión (la de ese día), pero cada cambio queda anotado.
+    const prior = same.changes?.length ? same.changes : [{ at: null, reason: same.reason }];
+    next = { ...base, v: same.v, from, reason, changes: [...prior, change] };
+  } else {
+    next = { ...base, v: Math.max(0, ...planDoc.versions.map((x) => x.v)) + 1, from, reason, changes: [change] };
+  }
   mutate?.(next);
-  // Si ya hay una versión que empieza hoy, se sustituye (varios ajustes el mismo día = una versión).
   const versions = planDoc.versions.filter((x) => x.from !== from);
   return { ...planDoc, versions: [...versions, next] };
+}
+
+/** Número de versión mostrado: posición cronológica (1, 2, 3…), sin huecos. */
+export function versionNumber(planDoc, version) {
+  const vs = [...(planDoc?.versions || [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : a.v - b.v));
+  return vs.findIndex((x) => x.v === version.v) + 1;
 }
 
 /** Kcal objetivo del día según si se entrena. trained: true | false | undefined (desconocido). */
