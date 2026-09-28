@@ -6,7 +6,7 @@ import { analyze } from './engine/analysis.js';
 import { Store } from './data/store.js';
 import { GitHubBackend, AuthError } from './data/github.js';
 import { LocalBackend } from './data/local.js';
-import { $, $$, esc, toast, initSheet, icon } from './ui/ui.js';
+import { $, $$, esc, toast, initSheet, icon, sheetOpen, closeSheet, consumeIgnorePop } from './ui/ui.js';
 import * as setup from './screens/setup.js';
 import * as hoy from './screens/hoy.js';
 import * as control from './screens/control.js';
@@ -42,7 +42,32 @@ const ctx = {
   },
   go(tab) { go(tab); },
   render() { render(); },
+  /** Navegación interna con historial: el botón «atrás» del móvil vuelve al estado anterior. */
+  nav(patch) { nav(patch); },
 };
+
+// ---------- historial (botón atrás del móvil) ----------
+function snapshot() {
+  const s = ctx.state;
+  return { tab: s.tab, hoySub: s.hoySub, planTab: s.planTab || 'rutina', date: s.date, ctlStep: s.ctl?.step ?? null };
+}
+function nav(patch) {
+  Object.assign(ctx.state, patch);
+  if ('ctlStep' in patch && ctx.state.ctl) ctx.state.ctl.step = patch.ctlStep;
+  history.pushState(snapshot(), '');
+  ctx.store?.flush();
+  render();
+  window.scrollTo({ top: 0 });
+}
+window.addEventListener('popstate', (e) => {
+  if (consumeIgnorePop()) return;               // lo provocó cerrar una hoja desde la app
+  if (sheetOpen()) { closeSheet({ fromPop: true }); return; }
+  const st = e.state;
+  if (!st || !ctx.store) return;
+  Object.assign(ctx.state, { tab: st.tab, hoySub: st.hoySub, planTab: st.planTab, date: st.date || ctx.state.date });
+  if (ctx.state.ctl && st.ctlStep != null) ctx.state.ctl.step = st.ctlStep;
+  render();
+});
 
 function backendFor(s) {
   return s.mode === 'demo' ? new LocalBackend() : new GitHubBackend({ owner: s.owner, repo: s.repo, token: s.token });
@@ -53,10 +78,11 @@ export async function start(settings) {
   ctx.settings = settings;
   ctx.store = new Store(backendFor(settings), { ns: settings.mode === 'demo' ? 'demo' : `${settings.owner}/${settings.repo}` });
   const store = ctx.store;
-  store.addEventListener('change', () => {
+  store.addEventListener('change', (e) => {
     ctx._analysis = null;
-    // no repintar mientras el usuario escribe
-    if (!document.activeElement?.matches('input, textarea, select')) scheduleRender();
+    // Un guardado propio no repinta: lo hace la pantalla si lo necesita. Repintar a mitad de
+    // escribir destruía el campo con el foco (el fallo de «duplica filas / no guarda»).
+    if (!e.detail?.local) scheduleRender();
   });
   store.addEventListener('status', (e) => paintSync(e.detail.status, e.detail.error));
 
@@ -73,6 +99,7 @@ export async function start(settings) {
     } else paintSync('offline', e);
   }
   ctx._analysis = null;
+  history.replaceState(snapshot(), '');
   render();
 }
 
@@ -80,14 +107,20 @@ let renderQueued = false;
 function scheduleRender() {
   if (renderQueued) return;
   renderQueued = true;
-  requestAnimationFrame(() => { renderQueued = false; render(); });
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    // nunca repintar mientras hay un campo con el foco: se reintenta al salir de él
+    if (document.activeElement?.matches('input, textarea, select') && document.activeElement.closest('#main, #sheet')) {
+      document.activeElement.addEventListener('blur', () => setTimeout(scheduleRender, 50), { once: true });
+      return;
+    }
+    render();
+  });
 }
 
 function go(tab) {
-  ctx.state.tab = tab;
-  ctx.store?.flush();
-  render();
-  window.scrollTo({ top: 0 });
+  if (tab === ctx.state.tab) { render(); return; }
+  nav({ tab });
 }
 
 function render() {

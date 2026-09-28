@@ -44,9 +44,13 @@ export function toast(text) {
 
 // ---------- hoja inferior ----------
 let onClose = null;
+let ignorePop = false;
+export const sheetOpen = () => $('#scrim').classList.contains('on');
 export function openSheet(html, { bind, close } = {}) {
   const sheet = $('#sheet');
   sheet.innerHTML = '<div class="grab"></div>' + html;
+  // una entrada en el historial por hoja abierta: el botón «atrás» del móvil la cierra
+  if (!sheetOpen()) history.pushState({ ...(history.state || {}), sheet: true }, '');
   $('#scrim').classList.add('on');
   onClose = close || null;
   bind?.(sheet);
@@ -54,10 +58,17 @@ export function openSheet(html, { bind, close } = {}) {
   if (first) setTimeout(() => first.focus(), 250);
   return sheet;
 }
-export function closeSheet() {
+export function closeSheet({ fromPop = false } = {}) {
+  if (!sheetOpen()) return;
   $('#scrim').classList.remove('on');
   const cb = onClose; onClose = null;
   cb?.();
+  // cerrada desde la app (no con «atrás»): quitar su entrada del historial
+  if (!fromPop && history.state?.sheet) { ignorePop = true; history.back(); }
+}
+/** Para app.js: ¿este popstate lo provocó closeSheet? */
+export function consumeIgnorePop() {
+  const v = ignorePop; ignorePop = false; return v;
 }
 export function initSheet() {
   $('#scrim').addEventListener('click', (e) => { if (e.target.id === 'scrim') closeSheet(); });

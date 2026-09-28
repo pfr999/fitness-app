@@ -143,7 +143,7 @@ function renderTargets(ctx, v) {
 
 // ---------------------------------------------------------------- bind
 export function bind(root, ctx) {
-  bindSeg(root, '#planSeg', (v) => { ctx.state.planTab = v; ctx.render(); });
+  bindSeg(root, '#planSeg', (v) => ctx.nav({ planTab: v }));
   $('#history', root)?.addEventListener('click', () => historySheet(ctx));
   $$('#dayTabs button', root).forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.v === 'new') return daySheet(ctx, -1);

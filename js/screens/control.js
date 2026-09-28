@@ -89,7 +89,7 @@ export function bind(root, ctx) {
   const st = ctx.state.ctl;
   if (!st.draft || (thisWeekCheckin(ctx) && !st.editing)) return bindDone(root, ctx);
   const d = st.draft;
-  const move = (k) => { st.step = Math.max(1, Math.min(STEPS.length, st.step + k)); ctx.render(); window.scrollTo({ top: 0 }); };
+  const move = (k) => ctx.nav({ ctlStep: Math.max(1, Math.min(STEPS.length, st.step + k)) });
   $('#prev', root).addEventListener('click', () => move(-1));
   $('#skip', root)?.addEventListener('click', () => move(1));
   $('#cancelEdit', root)?.addEventListener('click', () => { ctx.state.ctl = null; ctx.render(); });

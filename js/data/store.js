@@ -144,7 +144,7 @@ export class Store extends EventTarget {
     if (message && !p.messages.includes(message)) p.messages.push(message);
     this.pending.set(path, p);
     idb.set(this.key(PENDING, path), { messages: p.messages });
-    this.emit('change', { paths: [path] });
+    this.emit('change', { paths: [path], local: true }); // la pantalla que guarda decide si repinta
     this.setStatus('pending');
     this.schedule();
   }

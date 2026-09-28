@@ -17,7 +17,7 @@ export function render(ctx) {
 }
 
 export function bind(root, ctx) {
-  bindSeg(root, '#hoySeg', (v) => { ctx.state.hoySub = v; ctx.render(); });
+  bindSeg(root, '#hoySeg', (v) => ctx.nav({ hoySub: v }));
   $('#prevDay', root)?.addEventListener('click', () => { ctx.state.date = addDays(ctx.state.date, -1); ctx.render(); });
   $('#nextDay', root)?.addEventListener('click', () => { if (ctx.state.date < ctx.today()) { ctx.state.date = addDays(ctx.state.date, 1); ctx.render(); } });
   $('#toToday', root)?.addEventListener('click', () => { ctx.state.date = ctx.today(); ctx.render(); });
@@ -80,7 +80,7 @@ function renderDay(ctx) {
 function bindDay(root, ctx) {
   const date = ctx.state.date;
   $('#goControl', root)?.addEventListener('click', () => ctx.go('domingo'));
-  $('#goMeals', root)?.addEventListener('click', () => { ctx.state.hoySub = 'comidas'; ctx.render(); });
+  $('#goMeals', root)?.addEventListener('click', () => ctx.nav({ hoySub: 'comidas' }));
   const save = () => {
     const raw = $('#wIn', root).value;
     const w = num(raw);
@@ -88,6 +88,7 @@ function bindDay(root, ctx) {
     ctx.store.updateDay(date, (d) => { if (w == null) delete d.weight; else d.weight = w; }, w == null ? `Borra peso ${fmtShort(date)}` : `Peso ${fmtShort(date)}: ${fmt(w)} kg`);
     toast(w == null ? 'Peso borrado' : `${fmt(w)} kg guardado`);
     $('#wIn', root).blur();
+    ctx.render();
   };
   $('#saveW', root).addEventListener('click', save);
   $('#wIn', root).addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
@@ -106,6 +107,8 @@ function bindDay(root, ctx) {
         c.checked ? s.add(name) : s.delete(name);
         d.supplements_taken = s.size ? [...s] : undefined;
       }, `Suplementos ${fmtShort(date)}`);
+      const box = c.closest('.card'), all = $$('[data-supp]', box);
+      $('.aux', box).textContent = `${all.filter((x) => x.checked).length}/${all.length}`;
     }),
   );
 }
