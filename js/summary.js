@@ -4,7 +4,7 @@ import { addDays, fmtShort, range, lastWeekday, nextWeekday, daysBetween } from 
 import { FILES, planFor, currentPlan } from './model.js';
 import { weekSummary, adherenceMap } from './engine/analysis.js';
 import { weekBalance } from './engine/week.js';
-import { allExercises, loggedVolume, exerciseHistory, strengthTrend, resolveExercise } from './engine/training.js';
+import { allExercises, loggedVolume, plannedVolume, exerciseHistory, strengthTrend, resolveExercise } from './engine/training.js';
 import { MUSCLE_LABEL } from './training/catalog.js';
 
 const f = (n, d = 1) => (n == null || Number.isNaN(n) ? '—' : n.toFixed(d).replace('.', ','));
@@ -52,7 +52,10 @@ export function buildSummary(ctx) {
   for (const al of a.alerts || []) lines.push(`- Aviso: ${al.title}. ${al.text}`);
   const exs = allExercises(ctx.store.get('exercises.json'));
   const lv = loggedVolume(days, addDays(W, -6), W < today ? W : today, exs);
-  if (Object.keys(lv.byMuscle).length) lines.push(`- Volumen (series fraccionales): ${Object.entries(lv.byMuscle).sort((x, y) => y[1] - x[1]).map(([m, v]) => `${MUSCLE_LABEL[m] || m} ${f(v, v % 1 ? 1 : 0)}`).join(', ')}`);
+  const pv = plannedVolume(planFor(plan, W)?.routine, exs, planFor(plan, W)?.targets?.sessions).byMuscle;
+  const elapsed = Math.max(1, range(addDays(W, -6), W).filter((d) => d <= today).length);
+  const vk = [...new Set([...Object.keys(lv.byMuscle), ...Object.keys(pv)])];
+  if (vk.length) lines.push(`- Series por músculo (hechas/planificadas${elapsed < 7 ? ` a ${elapsed} de 7 días` : ''}): ${vk.map((m) => `${MUSCLE_LABEL[m] || m} ${f(lv.byMuscle[m] || 0, (lv.byMuscle[m] || 0) % 1 ? 1 : 0)}/${(() => { const x = Math.round((((pv[m] || 0) * elapsed) / 7) * 10) / 10; return f(x, x % 1 ? 1 : 0); })()}`).join(', ')}`);
   const ids = new Set();
   for (const d of Object.keys(days)) for (const s of days[d]?.session?.sets || []) { const e = resolveExercise(s, exs); if (e) ids.add(e.id); }
   const trends = [...ids].map((id) => { const h = exerciseHistory(days, id, exs).filter((x) => x.best); const t = strengthTrend(h); return { name: exs.find((e) => e.id === id)?.name, t, last: h[h.length - 1]?.best }; }).filter((x) => x.t.status !== 'pocos');

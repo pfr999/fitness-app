@@ -7,7 +7,8 @@ import { FILES, planFor, dietStatus, kcalTarget } from '../model.js';
 import { weekBalance } from '../engine/week.js';
 import { adherenceMap } from '../engine/analysis.js';
 import { MUSCLE_LABEL, MUSCLES } from '../training/catalog.js';
-import { exercisesOf, volumeBars } from './exercises.js';
+import { exercisesOf, volumeBars, volumeVsPlan } from './exercises.js';
+import { plannedVolume } from '../engine/training.js';
 import { currentControlWeek } from './control.js';
 
 const DIET = {
@@ -185,7 +186,12 @@ export function renderBalance(ctx, from, to) {
   const a = ctx.analysis();
   const tgtRate = a.latest?.rateTarget;
   const loss = b.weight.pctWeek != null ? -b.weight.pctWeek : null;
-  const muscles = MUSCLES.filter(([k]) => t.volume[k]);
+  const v = planFor(ctx.store.get(FILES.plan), to);
+  const planned = plannedVolume(v?.routine, exercisesOf(ctx), v?.targets?.sessions).byMuscle;
+  const elapsed = Math.max(1, Math.min(7, range(from, to).filter((d) => d <= ctx.today()).length));
+  const plannedSoFar = Object.fromEntries(Object.entries(planned).map(([k, x]) => [k, (x * elapsed) / 7]));
+  const muscles = MUSCLES.filter(([k]) => t.volume[k] || planned[k]);
+  const shortOnes = MUSCLES.filter(([k]) => plannedSoFar[k] && (t.volume[k] || 0) < plannedSoFar[k] * 0.9).map(([, l]) => l);
   return `<div class="card">
       <div class="ch"><h2>Balance de la semana</h2><span class="aux">${esc(fmtShort(from))}–${esc(fmtShort(to))}</span></div>
       <div class="g2" style="margin-bottom:12px">
@@ -212,7 +218,9 @@ export function renderBalance(ctx, from, to) {
         <tr><td>Pesadas</td><td class="n">${b.weight.weighIns}/7</td></tr>
       </table>
 
-      ${muscles.length ? `<div class="grp">Series por músculo (${t.sets} series)</div>${volumeBars(t.volume)}` : ''}
+      ${muscles.length ? `<div class="grp">Series por músculo · hechas / planificadas</div>
+        ${volumeVsPlan(t.volume, plannedSoFar)}
+        <div class="muted small" style="margin-top:6px">${t.sets} series apuntadas. La raya es lo planificado${elapsed < 7 ? ` hasta hoy (${elapsed} de 7 días)` : ''}; la franja verde, 10–20 series.${shortOnes.length ? ` <b class="warn">Por debajo de lo planificado: ${esc(shortOnes.join(', '))}.</b>` : t.sets ? ' Todo lo planificado cubierto.' : ''}${t.unknown.length ? ` Sin contar (sin músculos): ${esc(t.unknown.join(', '))}.` : ''}</div>` : ''}
     </div>`;
 }
 

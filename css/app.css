@@ -453,3 +453,7 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 .dayrow .dd b{white-space:nowrap}
 
 .chipset.sm button{min-height:34px;padding:0 10px;font-size:12.5px;border-radius:10px}
+
+.vol.vs{grid-template-columns:132px 1fr 52px}
+.vol .track .plan{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink-2);border-radius:1px;transform:translateX(-1px)}
+.vol b small{font-size:11px;color:var(--ink-3);font-weight:700}

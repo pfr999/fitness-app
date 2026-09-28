@@ -64,4 +64,19 @@ export function volumeBars(byMuscle, { max = 25 } = {}) {
   return rows.map(([l, v]) => `<div class="vol"><span>${esc(l)}</span><div class="track"><div class="z" style="left:${(10 / max) * 100}%;width:${(10 / max) * 100}%"></div><i class="${v < 10 ? 'lo' : ''}" style="width:${(Math.min(v, max) / max) * 100}%"></i></div><b class="num">${fmt(v, v % 1 ? 1 : 0)}</b></div>`).join('');
 }
 
+/**
+ * Series hechas frente a planificadas por músculo. La raya vertical marca lo planificado; la barra,
+ * lo hecho (naranja si se queda por debajo del 90 %). La franja verde es 10–20 series.
+ */
+export function volumeVsPlan(done, planned, { max = 25 } = {}) {
+  const keys = MUSCLES.map(([k]) => k).filter((k) => done[k] || planned[k]);
+  if (!keys.length) return '<div class="muted small">Sin datos.</div>';
+  return keys.map((k) => {
+    const d = done[k] || 0, p = planned[k] || 0;
+    const short = p && d < p * 0.9;
+    const f1 = (v) => fmt(v, v % 1 ? 1 : 0);
+    return `<div class="vol vs"><span>${esc(MUSCLE_LABEL[k])}</span><div class="track"><div class="z" style="left:${(10 / max) * 100}%;width:${(10 / max) * 100}%"></div><i class="${short ? 'lo' : ''}" style="width:${(Math.min(d, max) / max) * 100}%"></i>${p ? `<b class="plan" style="left:${(Math.min(p, max) / max) * 100}%"></b>` : ''}</div><b class="num ${short ? 'warn' : ''}">${f1(d)}${p ? `<small>/${f1(p)}</small>` : ''}</b></div>`;
+  }).join('');
+}
+
 export { resolveExercise };
