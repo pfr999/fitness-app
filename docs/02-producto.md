@@ -77,3 +77,16 @@ son opcionales y se añaden solo si no exigen infraestructura.
 | Fuente | Fase 1 (MVP) | Opción posterior | Descartado |
 |---|---|---|---|
 | Reloj (Samsung Health) | Pasos, sueño y pulso en reposo tecleados desde lo que muestra el reloj (~5 s). % graso por bioimpedancia del reloj como métrica semanal opcional. | Importar el export de Samsung Health (CSV) desde el móvil; o automatización Android (Tasker/MacroDroid + Health Connect → API de GitHub), sin verificar. | App nativa propia (Health Connect solo es accesible para apps nativas en primer plano). |
+
+## Modelo actual (v0.7): Hoy · Semana · Progreso · Plan
+- **Hoy → Día** es una lista del día (comidas, entreno, pasos, sueño, suplementos, nota) con estado y
+  acceso directo; al final **«Revisar y cerrar el día»** abre la misma ventana que la revisión semanal.
+- **Semana** (antes «Control»): tabla de los 7 días (tocar un día = revisarlo y validarlo: peso, pasos,
+  sueño, entreno y dieta: lo apuntado es todo / según plan / me pasé ±kcal / me quedé corto / no lo sé),
+  **balance de la semana** (kcal media vs objetivo con días registrados/estimados/sin validar, déficit,
+  macros de los días registrados, pasos, sesiones, sueño, peso, series por músculo) y el control.
+- **Control semanal** en 6 pasos: revisar los días → medidas → fotos → cómo ha ido → entreno
+  (autorregulación) → balance y decisión. Pensado para hacerse con calma: de ahí salen las conclusiones.
+- Un control pertenece a la semana del **día de control más cercano** (±3 días): hecho el lunes, cierra
+  la semana que terminó el domingo. De lunes a miércoles la pantalla Semana muestra la semana por cerrar.
+- El botón «atrás» del móvil navega dentro de la app (hoja → paso/subpestaña → pestaña).

@@ -73,6 +73,16 @@ export function lastWeekday(s, wd) {
   return addDays(s, -((cur - wd + 7) % 7));
 }
 
+/** Primer día con ese día de la semana en o después de s. */
+export function nextWeekday(s, wd) {
+  return addDays(s, (wd - weekday(s) + 7) % 7);
+}
+
+/** Día de la semana `wd` más cercano a s (de 3 días antes a 3 después). */
+export function nearestWeekday(s, wd) {
+  return addDays(s, ((wd - weekday(s) + 10) % 7) - 3);
+}
+
 /** Número de semana ISO. */
 export function isoWeek(s) {
   const d = parseISO(s);

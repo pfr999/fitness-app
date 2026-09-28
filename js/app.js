@@ -16,7 +16,7 @@ import { openSettings } from './screens/settings.js';
 import { seedDemo } from './screens/setup.js';
 
 const SCREENS = { hoy, domingo: control, progreso, plan };
-const TITLES = { hoy: 'Hoy', domingo: 'Control semanal', progreso: 'Progreso', plan: 'Plan' };
+const TITLES = { hoy: 'Hoy', domingo: 'Semana', progreso: 'Progreso', plan: 'Plan' };
 
 // ---------- ajustes locales (por dispositivo) ----------
 export function loadSettings() {
@@ -66,6 +66,8 @@ window.addEventListener('popstate', (e) => {
   if (!st || !ctx.store) return;
   Object.assign(ctx.state, { tab: st.tab, hoySub: st.hoySub, planTab: st.planTab, date: st.date || ctx.state.date });
   if (ctx.state.ctl && st.ctlStep != null) ctx.state.ctl.step = st.ctlStep;
+  // atrás desde el primer paso del control → vuelve a la pantalla Semana (lo revisado ya está guardado)
+  if (ctx.state.ctl?.active && (st.tab !== 'domingo' || st.ctlStep == null)) ctx.state.ctl = null;
   render();
 });
 

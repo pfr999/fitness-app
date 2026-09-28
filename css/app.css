@@ -418,3 +418,29 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 .set-row .mini{width:40px;height:40px}
 .set-row .mini.ok{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .sets{margin-left:0}
+
+/* ---------- semana ---------- */
+.dayrow{display:grid;grid-template-columns:64px 52px 1fr 48px 48px;gap:6px;align-items:center;width:100%;border:0;border-top:1px solid var(--line);background:none;padding:10px 0;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.dayrow:first-of-type{border-top:0}
+.dayrow.future{opacity:.4;cursor:default}
+.dayrow .dd{display:flex;align-items:center;gap:6px}
+.dayrow .dd b{font-size:13.5px}
+.dayrow .st{width:9px;height:9px;border-radius:50%;background:var(--line-2);flex:none}
+.dayrow .st.ok{background:var(--accent)}
+.dayrow .st.pend{background:var(--amber)}
+.dayrow .dv{display:flex;flex-direction:column;min-width:0}
+.dayrow .dv b{font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dayrow .dv small{font-size:10.5px;color:var(--ink-3);font-weight:700}
+.sheet-actions{position:sticky;bottom:calc(-22px - env(safe-area-inset-bottom));background:var(--surface);padding:10px 0 4px;margin-top:4px}
+
+/* ---------- lista del día ---------- */
+.dl{display:grid;grid-template-columns:12px 96px 1fr 16px;gap:10px;align-items:center;width:100%;border:0;border-top:1px solid var(--line);background:none;padding:13px 0;text-align:left;color:inherit;font:inherit;cursor:pointer;min-height:52px}
+.dl:first-child{border-top:0}
+.dl .st{width:10px;height:10px;border-radius:50%;border:2px solid var(--line-2)}
+.dl.done .st{background:var(--accent);border-color:var(--accent)}
+.dl-l{font-weight:700;font-size:14.5px}
+.dl-v{font-weight:800;font-size:14.5px;text-align:right;display:flex;flex-direction:column;align-items:flex-end;min-width:0}
+.dl-v small{font-size:11.5px;color:var(--ink-3);font-weight:700}
+.dl:not(.done) .dl-v{color:var(--ink-3);font-weight:700}
+.dl .go{color:var(--ink-3);display:grid}
+.dl .go svg{width:16px;height:16px}

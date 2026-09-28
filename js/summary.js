@@ -1,8 +1,9 @@
 // Resumen en texto (Markdown) para Claude: se guarda como resumen.md y se copia desde la app.
 
-import { addDays, fmtShort, range } from './dates.js';
+import { addDays, fmtShort, range, lastWeekday, nextWeekday, daysBetween } from './dates.js';
 import { FILES, planFor, currentPlan } from './model.js';
-import { weekSummary } from './engine/analysis.js';
+import { weekSummary, adherenceMap } from './engine/analysis.js';
+import { weekBalance } from './engine/week.js';
 import { allExercises, loggedVolume, exerciseHistory, strengthTrend, resolveExercise } from './engine/training.js';
 import { MUSCLE_LABEL } from './training/catalog.js';
 
@@ -34,11 +35,23 @@ export function buildSummary(ctx) {
     if (L.projection?.days && L.goal) lines.push(`- Previsión (modelo de Hall, kcal del plan): ${f(L.goal)} kg hacia ${fmtShort(addDays(today, Math.round(L.projection.days)))}`);
   }
   lines.push('');
-  lines.push(`## Últimos 7 días (${fmtShort(wk.from)}–${fmtShort(wk.to)})`);
-  lines.push(`- Pesadas: ${wk.weighIns}/7 · pasos media ${k(wk.steps)}${wk.targets.steps ? ` (objetivo ${k(wk.targets.steps)})` : ''} · sueño ${f(wk.sleep)} h · sesiones ${wk.sessions}${wk.targets.sessions ? `/${wk.targets.sessions}` : ''}`);
+  // semana que se revisa en el control (termina en el día de control más cercano)
+  const wd = config.checkin_weekday ?? 0;
+  const lastW = lastWeekday(today, wd);
+  const W = daysBetween(lastW, today) <= 3 ? lastW : nextWeekday(today, wd);
+  const checkins = Object.keys(days).filter((d) => days[d]?.checkin).map((d) => ({ date: d, checkin: days[d].checkin }));
+  const B = weekBalance({ plan, days }, addDays(W, -6), W, { analysis: a.empty ? null : a, adherence: adherenceMap(checkins, days), exercises: allExercises(ctx.store.get('exercises.json')), until: today });
+  lines.push(`## Balance de la semana (${fmtShort(addDays(W, -6))}–${fmtShort(W)}${W > today ? ', en curso' : ''})`);
+  const E = B.energy;
+  lines.push(`- Kcal media/día: ${k(E.kcalMean)} (objetivo ${k(E.targetMean)}) · ${E.logged} días registrados, ${E.estimated} estimados${E.unknown ? `, ${E.unknown} sin dato` : ''}${E.pending ? `, ${E.pending} sin validar (se asume el plan)` : ''}${E.deficit != null ? ` · déficit medio ≈ ${k(E.deficit)} kcal` : ''}`);
+  if (B.macros) lines.push(`- Macros (media de ${B.macros.days} días registrados): P ${k(B.macros.p)}/${k(B.macros.target.p)} g · C ${k(B.macros.c)}/${k(B.macros.target.c)} g · G ${k(B.macros.f)}/${k(B.macros.target.f)} g`);
+  lines.push(`- Pasos media ${k(B.steps.mean)}${B.steps.target ? `/${k(B.steps.target)}` : ''} · sesiones ${B.training.sessions}${B.training.target ? `/${B.training.target}` : ''} (${B.training.sets} series) · sueño ${f(B.sleep.mean)} h · pesadas ${B.weight.weighIns}/7`);
+  if (B.weight.change != null) lines.push(`- Peso (tendencia): ${f(B.weight.start)} → ${f(B.weight.end)} kg (${B.weight.change > 0 ? '+' : ''}${f(B.weight.change, 2)} kg · ${f(B.weight.pctWeek, 2)} %/sem)`);
+  const diets = B.rows.filter((r) => r.diet && r.diet.status !== 'logged' && r.diet.status !== 'plan').map((r) => `${fmtShort(r.date)} ${({ over: 'me pasé', under: 'me quedé corto', unknown: 'no lo sé' })[r.diet.status]}${r.diet.kcal_delta != null ? ` (${r.diet.kcal_delta > 0 ? '+' : ''}${k(r.diet.kcal_delta)})` : ''}`);
+  if (diets.length) lines.push(`- Días fuera del plan: ${diets.join(', ')}`);
   for (const al of a.alerts || []) lines.push(`- Aviso: ${al.title}. ${al.text}`);
   const exs = allExercises(ctx.store.get('exercises.json'));
-  const lv = loggedVolume(days, wk.from, wk.to, exs);
+  const lv = loggedVolume(days, addDays(W, -6), W < today ? W : today, exs);
   if (Object.keys(lv.byMuscle).length) lines.push(`- Volumen (series fraccionales): ${Object.entries(lv.byMuscle).sort((x, y) => y[1] - x[1]).map(([m, v]) => `${MUSCLE_LABEL[m] || m} ${f(v, v % 1 ? 1 : 0)}`).join(', ')}`);
   const ids = new Set();
   for (const d of Object.keys(days)) for (const s of days[d]?.session?.sets || []) { const e = resolveExercise(s, exs); if (e) ids.add(e.id); }

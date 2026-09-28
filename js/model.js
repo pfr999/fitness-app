@@ -148,19 +148,42 @@ export function sumItems(items = []) {
 }
 
 /**
+ * Estado de la dieta de un día (lo que se valida en la revisión semanal):
+ *   logged  → lo apuntado es todo lo que se comió
+ *   plan    → se comió según el plan
+ *   over    → se comió más que el plan (kcal_delta > 0, aproximado)
+ *   under   → se comió menos que el plan (kcal_delta < 0, aproximado)
+ *   unknown → no se sabe: el día no se usa para calcular el gasto
+ * Sin validar: «cerrar el día» (meals_complete) cuenta como logged; si no, pendiente (null).
+ */
+export function dietStatus(day) {
+  if (day?.diet?.status) return day.diet;
+  if (day?.meals_complete === true) return { status: 'logged' };
+  return null;
+}
+
+export const loggedKcal = (day) => (day?.meals || []).reduce((a, m) => a + sumItems(m.items).kcal, 0);
+
+/**
  * Ingesta del día para el TDEE.
- * - meals_complete === true → suma registrada
- * - en el control: número (p. ej. +300) → kcal del plan + esa diferencia
- * - en el control: "no sé" (false) → null (el día no se usa)
- * - en otro caso → kcal del plan (no registrar ≠ comer mal)
+ * - validado en la revisión semanal (day.diet) o día cerrado → lo que diga
+ * - formato antiguo (respuesta semanal / por día del control) → ajuste sobre el plan
+ * - sin validar → kcal del plan, marcado como supuesto (no registrar ≠ comer mal)
  */
 export function intakeFor(date, day, version, adherence = {}) {
+  const plan = kcalTarget(version, day?.trained);
+  const ds = dietStatus(day);
+  if (ds) {
+    if (ds.status === 'logged') return { kcal: loggedKcal(day), assumed: false };
+    if (ds.status === 'plan') return { kcal: plan, assumed: false };
+    if (ds.status === 'over' || ds.status === 'under') {
+      if (typeof ds.kcal_delta !== 'number') return { kcal: null, assumed: false };
+      return { kcal: plan + ds.kcal_delta, assumed: false };
+    }
+    if (ds.status === 'unknown') return { kcal: null, assumed: false };
+  }
   const a = adherence[date];
   if (a === false) return { kcal: null, assumed: false };
-  if (typeof a === 'number' && !(day?.meals_complete === true)) return { kcal: kcalTarget(version, day?.trained) + a, assumed: false };
-  if (day?.meals_complete === true && day.meals?.length) {
-    const kcal = day.meals.reduce((a, m) => a + sumItems(m.items).kcal, 0);
-    return { kcal, assumed: false };
-  }
-  return { kcal: kcalTarget(version, day?.trained), assumed: true };
+  if (typeof a === 'number') return { kcal: plan + a, assumed: false };
+  return { kcal: plan, assumed: true };
 }

@@ -1,7 +1,7 @@
 // Control semanal: medidas → fotos → cómo ha ido → resumen y decisión. Pasos saltables.
 
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, bindSeg, icon, alertBox, signed } from '../ui/ui.js';
-import { addDays, fmtShort, range, lastWeekday, weekday, daysBetween, fmtDayShort } from '../dates.js';
+import { addDays, fmtShort, range, lastWeekday, nextWeekday, nearestWeekday, weekday, daysBetween, fmtDayShort } from '../dates.js';
 import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
 import { analyze, weekSummary } from '../engine/analysis.js';
 import { MDC, isRealChange } from '../engine/body.js';
@@ -11,32 +11,39 @@ import { rpRecommendation } from '../engine/targets.js';
 import { musclesTrained } from '../engine/training.js';
 import { MUSCLES, MUSCLE_LABEL } from '../training/catalog.js';
 import { exercisesOf } from './exercises.js';
+import { renderLanding, bindLanding, renderDays, bindDays, renderBalance, balanceFor } from './semana.js';
 
-const STEPS = ['Medidas', 'Fotos', 'Cómo ha ido', 'Entreno', 'Resumen y decisión'];
+const STEPS = ['Revisar los días', 'Medidas', 'Fotos', 'Cómo ha ido', 'Entreno', 'Balance y decisión'];
 
 /** Inicio del periodo de control actual: el último día de control (p. ej. domingo) hasta hoy. */
-function periodStart(ctx) {
-  const cfg = ctx.store.get(FILES.config) || {};
-  return lastWeekday(ctx.today(), cfg.checkin_weekday ?? 0);
+// Un control pertenece a la semana que termina en el día de control (domingo) más cercano a su
+// fecha: hecho el lunes, cierra la semana que acabó el domingo; hecho el sábado, la que acaba mañana.
+const wdOf = (ctx) => ctx.store.get(FILES.config)?.checkin_weekday ?? 0;
+export const weekEndOf = (ctx, date) => nearestWeekday(date, wdOf(ctx));
+
+/** Semana que toca cerrar ahora: de lunes a miércoles, la que acaba de terminar; después, la que acaba el próximo día de control. */
+export function currentControlWeek(ctx) {
+  const today = ctx.today(), wd = wdOf(ctx);
+  const last = lastWeekday(today, wd);
+  return daysBetween(last, today) <= 3 ? last : nextWeekday(today, wd);
 }
 
-/** ¿Toca control? Hoy es el día de control y aún no hay control en este periodo, o hace más de 8 días del último. */
+/** Control (fecha) de la semana que termina en `weekEnd`, si existe. */
+export function checkinOfWeek(ctx, weekEnd) {
+  const days = ctx.store.allDays();
+  return Object.keys(days).filter((d) => days[d]?.checkin && weekEndOf(ctx, d) === weekEnd).sort().pop() || null;
+}
+
+/** ¿Toca control? Sin control para la semana actual y ya es su día de control (o se ha pasado). El primero, cualquier día. */
 export function isDue(ctx) {
-  const today = ctx.today();
-  const cfg = ctx.store.get(FILES.config) || {};
   const days = ctx.store.allDays();
-  const last = Object.keys(days).filter((d) => d <= today && days[d]?.checkin).sort().pop();
-  if (!last) return true; // aún no hay ningún control: el primero se puede hacer cualquier día
-  if (last >= periodStart(ctx)) return false;
-  if (weekday(today) === (cfg.checkin_weekday ?? 0)) return true;
-  return !!last && daysBetween(last, today) > 8;
+  if (!Object.keys(days).some((d) => days[d]?.checkin)) return true;
+  const W = currentControlWeek(ctx);
+  return !checkinOfWeek(ctx, W) && ctx.today() >= W;
 }
 
-/** Control ya hecho en el periodo actual (se puede hacer cualquier día; cuenta hasta el siguiente día de control). */
 function thisWeekCheckin(ctx) {
-  const today = ctx.today(), from = periodStart(ctx);
-  const days = ctx.store.allDays();
-  return Object.keys(days).filter((d) => d >= from && d <= today && days[d]?.checkin).sort().pop() || null;
+  return checkinOfWeek(ctx, currentControlWeek(ctx));
 }
 
 function prevCheckin(ctx, date) {
@@ -50,6 +57,7 @@ function newDraft(ctx, date) {
   const ck = day.checkin ? structuredClone(day.checkin) : {};
   return {
     date,
+    weekEnd: day.checkin ? weekEndOf(ctx, date) : currentControlWeek(ctx),
     origDate: day.checkin ? date : null,
     photoDate: ck.photos_from || date,
     weight: day.weight ?? null,
@@ -65,13 +73,19 @@ function newDraft(ctx, date) {
 }
 
 // ---------------------------------------------------------------- render
+/** Abre el recorrido del control (nuevo o editando uno existente). */
+export function startControl(ctx, date, editing = false) {
+  ctx.state.ctl = { active: true, step: 1, draft: newDraft(ctx, date), editing };
+  ctx.nav({ tab: 'domingo', ctlStep: 1 });
+}
+
 export function render(ctx) {
-  const st = (ctx.state.ctl ||= { step: 1, draft: null, editing: false });
-  const done = thisWeekCheckin(ctx);
-  if (done && !st.editing) return renderDone(ctx, done);
-  if (!st.draft) st.draft = newDraft(ctx, done || ctx.today());
-  const n = st.step;
-  const body = n === 1 ? stepMeasures(ctx, st.draft) : n === 2 ? stepPhotos(ctx, st.draft) : n === 3 ? stepWeek(ctx, st.draft) : n === 4 ? stepTraining(ctx, st.draft) : stepSummary(ctx, st.draft);
+  const st = ctx.state.ctl;
+  if (!st?.active) return renderLanding(ctx, { done: controlCard(ctx), history: historyList(ctx, thisWeekCheckin(ctx)) });
+  const n = Math.min(Math.max(st.step || 1, 1), STEPS.length);
+  st.step = n;
+  const d = st.draft;
+  const body = n === 1 ? stepDays(ctx, d) : n === 2 ? stepMeasures(ctx, d) : n === 3 ? stepPhotos(ctx, d) : n === 4 ? stepWeek(ctx, d) : n === 5 ? stepTraining(ctx, d) : stepSummary(ctx, d);
   return `<div class="stepper">${STEPS.map((_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>
     <div class="steplbl"><b>${STEPS[n - 1]}</b><span class="muted">${n} de ${STEPS.length}</span></div>
     ${body}
@@ -80,19 +94,22 @@ export function render(ctx) {
       <button class="btn primary" id="next">${n === STEPS.length ? 'Guardar control' : 'Siguiente'}</button>
     </div>
     ${n < STEPS.length ? `<button class="link" id="skip" style="width:100%;text-align:center;margin-top:6px">Saltar este paso</button>` : ''}
-    ${st.editing ? `<button class="link" id="cancelEdit" style="width:100%;text-align:center">Cancelar edición</button>` : ''}
-    ${!st.editing && st.step === 1 ? historyList(ctx, null) : ''}
+    <button class="link" id="cancelEdit" style="width:100%;text-align:center">Salir del control sin guardar</button>
     ${st.draft.origDate ? `<button class="link" id="delCk" style="width:100%;text-align:center;color:var(--amber)">Borrar este control</button>` : ''}`;
 }
 
 export function bind(root, ctx) {
   const st = ctx.state.ctl;
-  if (!st.draft || (thisWeekCheckin(ctx) && !st.editing)) return bindDone(root, ctx);
+  if (!st?.active) { bindLanding(root, ctx); return bindDone(root, ctx); }
   const d = st.draft;
+  if (st.step === 1) bindDays(root, ctx, addDays(d.weekEnd, -6), d.weekEnd, () => { ctx._analysis = null; ctx.render(); });
   const move = (k) => ctx.nav({ ctlStep: Math.max(1, Math.min(STEPS.length, st.step + k)) });
   $('#prev', root).addEventListener('click', () => move(-1));
   $('#skip', root)?.addEventListener('click', () => move(1));
-  $('#cancelEdit', root)?.addEventListener('click', () => { ctx.state.ctl = null; ctx.render(); });
+  $('#cancelEdit', root)?.addEventListener('click', () => {
+    if (!confirm('¿Salir del control? Lo que hayas revisado de cada día ya está guardado; medidas, valoraciones y decisión no.')) return;
+    ctx.state.ctl = null; ctx.render();
+  });
   $('#next', root).addEventListener('click', () => (st.step === STEPS.length ? save(ctx) : move(1)));
   bindHistory(root, ctx);
 
@@ -226,13 +243,13 @@ const dias = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
 
 function stepWeek(ctx, d) {
   const days = ctx.store.allDays();
-  const win = range(addDays(d.date, -6), d.date);
+  const win = range(addDays(d.weekEnd, -6), d.weekEnd);
   const logged = win.filter((x) => days[x]?.meals_complete === true);
   const unlogged = win.length - logged.length;
   const a = d.adherence;
   const opt = (v, l) => `<button type="button" data-v="${v}" class="${a.status === v ? 'on' : ''}">${l}</button>`;
   const rating = (id, label, opts) => `<div class="field"><label>${label}</label><div class="chipset" data-rating="${id}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${d.ratings[id] === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
-  return `<div class="card">
+  return `<div class="card" hidden>
       <div class="ch"><h2>¿Cómo fue la semana respecto al plan?</h2></div>
       <div class="muted small" style="margin:-4px 0 10px">${logged.length ? `${dias(logged.length)} con comidas registradas: cuentan con lo registrado. ` : ''}${unlogged ? `Esta respuesta se aplica a ${logged.length ? 'los otros ' : 'los '}${dias(unlogged)} sin registrar comidas.` : 'Todos los días tienen las comidas registradas.'}</div>
       ${unlogged ? `<div class="chipset" id="adh">${opt('plan', 'Según plan')}${opt('over', 'Me pasé')}${opt('under', 'Me quedé corto')}${opt('unknown', 'No lo sé')}</div>
@@ -250,6 +267,11 @@ function stepWeek(ctx, d) {
     </div></div>
     <div class="card"><div class="ch"><h2>Nota de la semana</h2></div>
       <textarea class="inp" id="note" placeholder="Sensaciones, incidencias, lesiones, lo que quieras recordar…">${esc(d.note)}</textarea></div>`;
+}
+
+function stepDays(ctx, d) {
+  return `<div class="muted small" style="margin:-6px 0 12px;padding:0 4px">Semana del ${esc(fmtShort(addDays(d.weekEnd, -6)))} al ${esc(fmtShort(d.weekEnd))}. Revisa cada día: peso, pasos, entreno y cómo comiste. Es lo que alimenta el balance y el cálculo de tu gasto.</div>
+    ${renderDays(ctx, addDays(d.weekEnd, -6), d.weekEnd)}`;
 }
 
 function stepTraining(ctx, d) {
@@ -289,7 +311,9 @@ function stepSummary(ctx, d) {
   const sumNow = Object.keys(d.skinfolds).length ? Object.values(d.skinfolds).reduce((x, y) => x + y, 0) : null;
   const sumPrev = prev?.checkin?.skinfolds && Object.keys(prev.checkin.skinfolds).length ? Object.values(prev.checkin.skinfolds).reduce((x, y) => x + y, 0) : null;
   const ds = sumNow != null && sumPrev != null ? sumNow - sumPrev : null;
-  const loss = L.rate ? -L.rate.pctWeek : null;
+  // cifras de la semana revisada (las mismas que el balance), no la tendencia de hoy
+  const wb = balanceFor(ctx, addDays(d.weekEnd, -6), d.weekEnd);
+  const loss = wb.weight.pctWeek != null ? -wb.weight.pctWeek : L.rate ? -L.rate.pctWeek : null;
   const tgt = L.rateTarget || [0.4, 0.7];
   const inTarget = loss != null && loss >= tgt[0] && loss <= tgt[1];
   const note = loss == null ? 'Aún no hay datos de peso suficientes.' : !L.rateReliable ? 'Con menos de 14 días de datos el ritmo es orientativo.' : inTarget ? `Dentro del objetivo ${fmt(tgt[0])}–${fmt(tgt[1])} %.` : loss < tgt[0] ? `Por debajo del objetivo ${fmt(tgt[0])}–${fmt(tgt[1])} %.` : `Por encima de ${fmt(tgt[1])} %: riesgo para la masa magra.`;
@@ -307,8 +331,8 @@ function stepSummary(ctx, d) {
 
   const row = (l, real, obj, good) => `<tr><td>${l}</td><td class="n ${good == null ? '' : good ? 'up' : 'warn'}">${real}</td><td class="o">${obj}</td></tr>`;
   return `<div class="sum-hero">
-      <div class="k">Últimos 7 días · ${fmtShort(wk.from)}–${fmtShort(wk.to)}</div>
-      <div class="big num">${loss != null ? `${fmt(-loss, 2)} %/sem` : '—'}</div>
+      <div class="k">Semana del ${fmtShort(addDays(d.weekEnd, -6))} al ${fmtShort(d.weekEnd)}</div>
+      <div class="big num">${wb.weight.change != null ? `${signed(wb.weight.change)} kg` : '—'}${loss != null ? ` <span style="font-size:20px;opacity:.8">· ${fmt(-loss, 2)} %/sem</span>` : ''}</div>
       <div class="small" style="opacity:.75;margin-bottom:12px">${note}</div>
       <div class="g2">
         <div><span>Tendencia</span><b class="num">${L.trend ? fmt(L.trend.level) + ' kg' : '—'}</b></div>
@@ -318,7 +342,8 @@ function stepSummary(ctx, d) {
       </div>
     </div>
     ${alerts.length ? `<div class="card"><div class="ch"><h2>Qué dice la semana</h2></div>${alerts.map(alertBox).join('')}</div>` : ''}
-    <div class="card"><div class="ch"><h2>Semana vs objetivos</h2></div>
+    ${renderBalance(ctx, addDays(d.weekEnd, -6), d.weekEnd)}
+    <div class="card" hidden><div class="ch"><h2>Semana vs objetivos</h2></div>
       <table class="t"><tr><th>Indicador</th><th style="text-align:right">Real</th><th style="text-align:right">Obj.</th></tr>
         ${row('Ritmo de pérdida', loss != null ? fmt(loss, 2) + ' %' : '—', `${fmt(tgt[0])}–${fmt(tgt[1])}`, loss != null && L.rateReliable ? inTarget : null)}
         ${row('Pasos / día', wk.steps != null ? fmtK(wk.steps) : '—', t.steps ? fmtK(t.steps) : '—', wk.steps != null && t.steps ? wk.steps >= t.steps * 0.9 : null)}
@@ -357,7 +382,20 @@ async function save(ctx) {
   ctx.state.ctl = null;
   toast('Control guardado');
   writeSummary(ctx);
-  ctx.go(goPlan ? 'plan' : 'domingo');
+  if (goPlan) ctx.go('plan'); else ctx.nav({ tab: 'domingo' });
+}
+
+// ---------------------------------------------------------------- tarjeta del control
+function controlCard(ctx) {
+  const date = thisWeekCheckin(ctx);
+  if (date) return renderDone(ctx, date);
+  const due = isDue(ctx);
+  return `<div class="card" style="${due ? 'border-color:var(--accent)' : ''}">
+      <div class="ch"><h2>Control semanal</h2>${due ? '<span class="badge g">Toca</span>' : ''}</div>
+      <div class="small" style="font-weight:700;margin:-6px 0 6px">Semana del ${esc(fmtShort(addDays(currentControlWeek(ctx), -6)))} al ${esc(fmtShort(currentControlWeek(ctx)))}</div>
+      <div class="muted small" style="margin:-4px 0 12px">Revisa cada día, mídete, fotos, cómo ha ido, entreno y cierra con el balance y tu decisión. Tómate tu tiempo: de aquí salen las conclusiones.</div>
+      <button class="btn primary" id="startCk">Empezar el control semanal</button>
+    </div>`;
 }
 
 // ---------------------------------------------------------------- hecho
@@ -366,7 +404,7 @@ function renderDone(ctx, date) {
   const c = day.checkin;
   const m = c.measures || {};
   return `<div class="card">
-      <div class="row"><div><div class="muted small" style="font-weight:700">Control de esta semana</div><div style="font-size:20px;font-weight:800">${esc(fmtShort(date))} ✓</div></div>
+      <div class="row"><div><div class="muted small" style="font-weight:700">Control de la semana del ${esc(fmtShort(addDays(weekEndOf(ctx, date), -6)))} al ${esc(fmtShort(weekEndOf(ctx, date)))}</div><div style="font-size:20px;font-weight:800">${esc(fmtShort(date))} ✓</div></div>
       <button class="btn secondary sm" id="edit">${icon.edit} Editar</button></div>
       <div class="sep"></div>
       <table class="t">
@@ -376,9 +414,8 @@ function renderDone(ctx, date) {
         ${c.decision?.text ? `<tr><td>Decisión</td><td class="n" style="font-weight:600">${esc(c.decision.text)}</td></tr>` : ''}
       </table>
     </div>
-    <button class="btn primary" id="copy">${icon.copy} Copiar resumen para Claude</button>
-    <div class="hint" style="text-align:center;margin-bottom:12px">También queda en <b>resumen.md</b> de tu repo de datos.</div>
-    ${historyList(ctx, date)}`;
+    <button class="btn secondary" id="copy" style="margin-bottom:4px">${icon.copy} Copiar resumen para Claude</button>
+    <div class="hint" style="text-align:center;margin-bottom:12px">También queda en <b>resumen.md</b> de tu repo de datos.</div>`;
 }
 
 /** Lista de controles anteriores, cada uno editable. */
@@ -396,17 +433,14 @@ function labelOf(ctx, id) {
 }
 
 function bindDone(root, ctx) {
-  $('#edit', root)?.addEventListener('click', () => { ctx.state.ctl = { step: 1, draft: newDraft(ctx, thisWeekCheckin(ctx)), editing: true }; ctx.render(); });
+  $('#startCk', root)?.addEventListener('click', () => startControl(ctx, ctx.today()));
+  $('#edit', root)?.addEventListener('click', () => startControl(ctx, thisWeekCheckin(ctx), true));
   bindHistory(root, ctx);
   $('#copy', root)?.addEventListener('click', () => copySummary(ctx));
 }
 
 function bindHistory(root, ctx) {
-  $$('[data-editck]', root).forEach((b) => b.addEventListener('click', () => {
-    ctx.state.ctl = { step: 1, draft: newDraft(ctx, b.dataset.editck), editing: true };
-    ctx.render();
-    window.scrollTo({ top: 0 });
-  }));
+  $$('[data-editck]', root).forEach((b) => b.addEventListener('click', () => startControl(ctx, b.dataset.editck, true)));
 }
 
 export async function copySummary(ctx) {

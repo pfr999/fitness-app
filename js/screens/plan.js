@@ -234,7 +234,7 @@ function dietSheet(ctx) {
       <button class="btn secondary sm" id="addMeal" type="button">${icon.plus} Añadir comida</button>
       <div class="field"><label for="dRules">Reglas (una por línea)</label><textarea class="inp" id="dRules">${esc(d.rules.join('\n'))}</textarea></div>
       ${reasonField}
-      <button class="btn primary" id="dSave">Guardar nueva versión</button>
+      <div class="sheet-actions"><button class="btn primary" id="dSave">Guardar nueva versión</button></div>
     </div>`, {
     bind: (sh) => {
       const sum = () => { $('#dSum', sh).textContent = `Los macros suman ${fmtK((int($('#dP', sh).value) || 0) * 4 + (int($('#dC', sh).value) || 0) * 4 + (int($('#dF', sh).value) || 0) * 9)} kcal.`; };
@@ -282,7 +282,7 @@ function daySheet(ctx, idx) {
       <div class="hint" style="margin-top:-4px">Al escribir te sugiere ejercicios del catálogo (ya saben qué músculos trabajan). Si pones uno que no está, luego podrás asignarle los músculos.</div>
       <button class="btn secondary sm" id="addItem" type="button">${icon.plus} Añadir ejercicio</button>
       ${reasonField}
-      <button class="btn primary" id="daySave">Guardar nueva versión</button>
+      <div class="sheet-actions"><button class="btn primary" id="daySave">Guardar nueva versión</button></div>
       ${isNew ? '' : `<button class="btn secondary" id="dayDel" style="color:var(--amber)">${icon.trash} Eliminar este día</button>`}
     </div>`, {
     bind: (sh) => {
@@ -354,7 +354,7 @@ function targetsSheet(ctx) {
       <div class="field"><label>Ritmo de pérdida</label><div class="seg" id="tAuto"><button data-v="auto" class="${auto ? 'on' : ''}">Automático (según % graso)</button><button data-v="manual" class="${auto ? '' : 'on'}">Manual</button></div></div>
       <div class="g2" id="tManual" ${auto ? 'hidden' : ''}><div class="field"><label for="tR0">Mín. %/sem</label><input class="inp" id="tR0" inputmode="decimal" value="${t.rate_pct_week ? fmt(t.rate_pct_week[0], 2) : ''}"></div><div class="field"><label for="tR1">Máx. %/sem</label><input class="inp" id="tR1" inputmode="decimal" value="${t.rate_pct_week ? fmt(t.rate_pct_week[1], 2) : ''}"></div></div>
       ${reasonField}
-      <button class="btn primary" id="tSave">Guardar nueva versión</button>
+      <div class="sheet-actions"><button class="btn primary" id="tSave">Guardar nueva versión</button></div>
     </div>`, {
     bind: (sh) => {
       bindSeg(sh, '#tAuto', (val) => { $('#tManual', sh).hidden = val === 'auto'; });

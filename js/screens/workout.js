@@ -86,7 +86,7 @@ export function render(ctx) {
   return `${days.length ? `<div class="daytabs" id="trainDays">${days.map((d) => `<button data-v="${esc(d.name)}" class="${d.name === rd.name ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>` : ''}
     <div class="card">
       <div class="ch"><h2>${esc(rd.name)}</h2><span class="aux">${(() => { const n = logged.filter((s) => !s.warmup).length; return `${n} ${n === 1 ? 'serie apuntada' : 'series apuntadas'}`; })()}</span></div>
-      <div class="muted small" style="margin:-6px 0 10px">Toca un ejercicio para apuntar. Los números en gris son tu última sesión: si repites igual, toca <b>✓</b>; si no, escribe lo que hiciste.</div>
+      <div class="muted small" style="margin:-6px 0 10px">En gris, tu última sesión. <b>✓</b> la repite; si no, escribe lo que hiciste.</div>
       ${all.map(block).join('')}
       <button class="btn secondary sm" id="addExtra" style="width:100%;margin-top:10px">${icon.plus} Ejercicio extra</button>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">

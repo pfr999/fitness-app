@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { addDays, range, daysBetween, weekStart, monthKey, lastWeekday } from '../js/dates.js';
+import { addDays, range, daysBetween, weekStart, monthKey, lastWeekday, nearestWeekday, nextWeekday } from '../js/dates.js';
 import { kalmanTrend, emaTrend, weeklyRate } from '../js/engine/trend.js';
 import { adaptiveTDEE, hallProjection, energyDensity, rmr } from '../js/engine/energy.js';
 import { faulkner, navyMale, rfm, whtr, whtrCategory, ffmi, sumSkinfolds, rollingMean, isRealChange } from '../js/engine/body.js';
@@ -23,6 +23,12 @@ test('fechas locales', () => {
   assert.equal(lastWeekday('2026-09-28', 0), '2026-09-27'); // lunes → domingo anterior
   assert.equal(lastWeekday('2026-10-04', 0), '2026-10-04'); // el propio domingo
   assert.equal(lastWeekday('2026-10-03', 0), '2026-09-27'); // sábado → domingo anterior
+  // un control pertenece a la semana del domingo más cercano
+  assert.equal(nearestWeekday('2026-09-28', 0), '2026-09-27'); // lunes → domingo de ayer
+  assert.equal(nearestWeekday('2026-09-30', 0), '2026-09-27'); // miércoles → domingo pasado
+  assert.equal(nearestWeekday('2026-10-01', 0), '2026-10-04'); // jueves → próximo domingo
+  assert.equal(nearestWeekday('2026-10-03', 0), '2026-10-04'); // sábado → mañana
+  assert.equal(nextWeekday('2026-09-28', 0), '2026-10-04');
   assert.deepEqual(monthsBetween('2026-11-15', '2027-02-01'), ['2026-11', '2026-12', '2027-01', '2027-02']);
 });
 

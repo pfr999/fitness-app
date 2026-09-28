@@ -73,7 +73,7 @@ export function render(ctx) {
     </div>
     ${cards}
     <button class="btn ${complete ? 'secondary' : 'primary'}" id="dayComplete" style="margin-bottom:6px">${complete ? `${icon.check} Día completo · toca para desmarcar` : 'Marcar día completo ✓'}</button>
-    <div class="hint" style="text-align:center;margin-bottom:12px">${complete ? 'Lo apuntado cuenta como todo lo que comiste hoy.' : 'Púlsalo cuando hayas apuntado todo lo de hoy. Si no, el día cuenta como «sin registrar» y se resuelve en el control semanal.'}</div>
+    <div class="hint" style="text-align:center;margin-bottom:12px">${complete ? 'Lo apuntado cuenta como todo lo que comiste hoy.' : 'Cuando hayas apuntado todo lo de hoy.'}</div>
     <div class="attr" style="text-align:center">Datos: CIQUAL (ANSES) · Open Food Facts (ODbL)</div>`;
 }
 
@@ -94,7 +94,10 @@ export function bind(root, ctx) {
   }));
   $('#dayComplete', root)?.addEventListener('click', () => {
     const cur = ctx.store.day(date).meals_complete === true;
-    ctx.store.updateDay(date, (d) => { if (cur) delete d.meals_complete; else d.meals_complete = true; }, `Comidas ${fmtShort(date)}: ${cur ? 'día abierto' : 'día completo'}`);
+    ctx.store.updateDay(date, (d) => {
+      if (cur) { delete d.meals_complete; if (d.diet?.status === 'logged') delete d.diet; }
+      else { d.meals_complete = true; d.diet = { status: 'logged' }; }
+    }, `Comidas ${fmtShort(date)}: ${cur ? 'día abierto' : 'día completo'}`);
     toast(cur ? 'Día desmarcado' : 'Día completo ✓');
     ctx.render();
   });
@@ -252,7 +255,7 @@ function customFoodSheet(ctx, date, slot, pre = {}) {
       <div class="g2"><div class="field"><label for="cC">Carbohidratos g</label><input class="inp" id="cC" inputmode="decimal"></div><div class="field"><label for="cF">Grasas g</label><input class="inp" id="cF" inputmode="decimal"></div></div>
       <div class="g2"><div class="field"><label for="cQ">Envase (opcional)</label><input class="inp" id="cQ" value="${esc(pre.qty || '')}" placeholder="400 g"></div><div class="field"><label for="cE">Código de barras</label><input class="inp" id="cE" inputmode="numeric" value="${esc(pre.ean || '')}"></div></div>
       <div class="hint" id="cChk"></div>
-      <button class="btn primary" id="cSave">Guardar y elegir cantidad</button>
+      <div class="sheet-actions"><button class="btn primary" id="cSave">Guardar y elegir cantidad</button></div>
     </div>`, {
     bind: (sh) => {
       const vals = () => ({ kcal: num($('#cK', sh).value), p: num($('#cP', sh).value), c: num($('#cC', sh).value), f: num($('#cF', sh).value) });

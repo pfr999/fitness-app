@@ -72,7 +72,8 @@ de una serie se reconoce por `ex` (id) o, si no lo tiene, por su nombre o alias.
         { "food": "off:8480000038524", "name": "Patata cocida en conserva", "brand": "Hacendado",
           "g": 120, "per100": { "kcal": 68, "p": 1.8, "c": 14.2, "f": 0.1 } } ] } ],
     "trained": true,                                    // true entreno · false descanso · ausente = sin marcar
-    "meals_complete": null,                             // null = se asume el plan; true/false lo fija el usuario
+    "meals_complete": null,                             // «día cerrado» desde Comidas (= diet logged)
+    "diet": { "status": "logged|plan|over|under|unknown", "kcal_delta": 700 },  // validación del día (Hoy o revisión semanal)
     "supplements_taken": ["Creatina", "Vitamina D3"],
     "session": { "day": "Día 3", "sets": [
         { "ex": "peso_muerto_rumano", "name": "Peso muerto rumano", "i": 0, "kg": 100, "reps": 8, "rpe": 9 } ] },  // i = nº de serie
