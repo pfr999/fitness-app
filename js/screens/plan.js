@@ -7,6 +7,7 @@ import { hallProjection } from '../engine/energy.js';
 import { writeSummary } from '../summary.js';
 import { exercisesOf, musclesLine, datalist, assignSheet, volumeBars } from './exercises.js';
 import { MUSCLES } from '../training/catalog.js';
+import { exportPlan, parsePlan, extractJson } from '../plan-io.js';
 import { resolveExercise, plannedVolume } from '../engine/training.js';
 
 const TABS = [['rutina', 'Rutina'], ['dieta', 'Dieta'], ['supl', 'Suplem.'], ['obj', 'Objetivos']];
@@ -61,6 +62,10 @@ export function render(ctx) {
       <div class="vi">v${versionNumber(doc, v)}</div>
       <div style="flex:1;min-width:0"><b style="font-size:15px">${esc([v.phase && `Fase ${v.phase}`, v.micro && `Micro ${v.micro}`].filter(Boolean).join(' · ') || 'Plan actual')}</b><div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Desde ${esc(fmtShort(v.from))} ${prevReason}</div></div>
       <button class="link" id="history">Historial</button>
+    </div>
+    <div class="g2" style="margin:-4px 0 12px">
+      <button class="btn secondary sm" id="planImport" style="width:100%">Importar plan</button>
+      <button class="btn secondary sm" id="planExport" style="width:100%">Exportar / Claude</button>
     </div>
     <div class="seg" id="planSeg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-v="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   const body = tab === 'dieta' ? renderDiet(v) : tab === 'supl' ? renderSupp(v) : tab === 'obj' ? renderTargets(ctx, v) : renderRoutine(ctx, v);
@@ -146,6 +151,8 @@ function renderTargets(ctx, v) {
 export function bind(root, ctx) {
   bindSeg(root, '#planSeg', (v) => ctx.nav({ planTab: v }));
   $('#history', root)?.addEventListener('click', () => historySheet(ctx));
+  $('#planImport', root)?.addEventListener('click', () => importSheet(ctx));
+  $('#planExport', root)?.addEventListener('click', () => exportSheet(ctx));
   $$('#dayTabs button', root).forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.v === 'new') return daySheet(ctx, -1);
     ctx.state.planDay = +b.dataset.v; ctx.render();
@@ -472,6 +479,113 @@ function historySheet(ctx) {
         closeSheet();
         ctx.render();
       }));
+    },
+  });
+}
+
+// ---------------------------------------------------------------- importar / exportar (formato Recomp)
+const MUSCLE_KEYS = MUSCLES.map(([k, l]) => `${k} (${l})`).join(', ');
+export const CLAUDE_PROMPT = `Cuando cerremos un plan, dámelo en «formato Recomp»: un único bloque JSON (sin comentarios) con esta forma. Incluye solo las secciones que cambien; las que no vengan se quedan como están.
+
+{
+  "formato": "recomp-plan",
+  "fase": "1e", "micro": "1/6",
+  "objetivos": { "peso_kg": 97, "cintura_cm": 91, "pasos": 10000, "sesiones_semana": 5, "sueno_h": 7.5, "ritmo_pct_semana": null },
+  "dieta": {
+    "kcal_entreno": 3150, "kcal_descanso": 2850, "proteina_g": 260, "carbohidratos_g": 330, "grasas_g": 85,
+    "comidas": [ { "nombre": "Desayuno", "porciones": { "P": 3, "C": 3, "G": 2 } } ],
+    "reglas": [ "Comida libre opcional el domingo en la cena (máx. 1.200 kcal)" ]
+  },
+  "rutina": { "dias": [ { "nombre": "Día 1 · Pierna", "ejercicios": [
+    { "nombre": "Sentadilla trasera", "series": 4, "reps": [6, 8], "rpe": 8, "nota": "barra alta" }
+  ] } ] },
+  "suplementos": [ { "nombre": "Creatina", "dosis": "5 g", "momento": "Con una comida", "tipo": "suplemento" } ]
+}
+
+Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "ritmo_pct_semana" es null (automático) o [mín, máx] en % de peso por semana; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
+
+async function copyText(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); toast(okMsg); }
+  catch { openSheet(`<h3>Copiar</h3><div class="muted">Mantén pulsado para copiar.</div><pre class="claude">${esc(text)}</pre>`); }
+}
+
+function exportSheet(ctx) {
+  const v = currentPlan(plan(ctx));
+  const json = JSON.stringify(exportPlan(v), null, 2);
+  openSheet(`<h3>Exportar el plan</h3>
+    <div class="muted">Para diseñar cambios con Claude: copia tu plan actual y las instrucciones del formato, pégalo en la conversación, y cuando lo tengáis cerrado pídele el plan «en formato Recomp» y usa <b>Importar plan</b>.</div>
+    <div class="stack" style="margin-top:14px">
+      <button class="btn primary" id="xAll">Copiar plan + instrucciones para Claude</button>
+      <button class="btn secondary" id="xJson">Copiar solo el plan (JSON)</button>
+    </div>
+    <pre class="claude" style="max-height:34vh">${esc(json)}</pre>`, {
+    bind: (sh) => {
+      $('#xAll', sh).addEventListener('click', () => copyText(`${CLAUDE_PROMPT}\n\nEste es mi plan actual:\n\n\`\`\`json\n${json}\n\`\`\``, 'Copiado: pégalo en Claude'));
+      $('#xJson', sh).addEventListener('click', () => copyText(json, 'Plan copiado'));
+    },
+  });
+}
+
+function importSheet(ctx) {
+  openSheet(`<h3>Importar plan</h3>
+    <div class="muted">Pega el plan en «formato Recomp» (el bloque que te da Claude). Solo cambia lo que venga en él; antes de aplicarlo verás qué cambia.</div>
+    <div class="stack" style="margin-top:12px">
+      <div class="g2"><button class="btn secondary sm" id="iPaste" type="button" style="width:100%">Pegar del portapapeles</button>
+        <label class="btn secondary sm" style="width:100%;position:relative">Abrir archivo<input type="file" id="iFile" accept=".json,.txt,application/json,text/plain" style="position:absolute;inset:0;opacity:0"></label></div>
+      <textarea class="inp" id="iText" placeholder='{ "formato": "recomp-plan", … }' style="min-height:160px;font:500 12.5px/1.45 ui-monospace,Menlo,monospace"></textarea>
+      <div id="iPreview"></div>
+      <div class="sheet-actions"><button class="btn primary" id="iCheck">Revisar cambios</button></div>
+    </div>`, {
+    bind: (sh) => {
+      let parsed = null;
+      const ta = $('#iText', sh);
+      $('#iPaste', sh).addEventListener('click', async () => {
+        try { ta.value = await navigator.clipboard.readText(); preview(); } catch { toast('No se pudo leer el portapapeles: pégalo a mano'); }
+      });
+      $('#iFile', sh).addEventListener('change', async (e) => { const f = e.target.files?.[0]; if (f) { ta.value = await f.text(); preview(); } });
+      ta.addEventListener('input', () => { parsed = null; $('#iCheck', sh).textContent = 'Revisar cambios'; });
+      const preview = () => {
+        const box = $('#iPreview', sh);
+        try {
+          const r = parsePlan(extractJson(ta.value));
+          const before = currentPlan(plan(ctx));
+          const after = structuredClone(before);
+          r.apply(after);
+          parsed = r;
+          const diff = diffText(before, after);
+          box.innerHTML = `<div class="card flat" style="margin:0">
+            <div class="small" style="font-weight:800;margin-bottom:6px">Secciones: ${esc(r.sections.join(', '))}</div>
+            <div class="small">${diff ? `Cambia: ${esc(diff)}` : 'No hay diferencias con tu plan actual.'}</div>
+            ${r.exercises.length ? `<div class="small" style="margin-top:6px">Ejercicios con músculos definidos: ${esc(r.exercises.map((e) => e.name).join(', '))}</div>` : ''}
+            ${r.warnings.map((w) => `<div class="small warn" style="margin-top:6px">⚠ ${esc(w)}</div>`).join('')}
+          </div>
+          <div class="field" style="margin-top:10px"><label for="iWhy">Motivo</label><input class="inp" id="iWhy" value="Plan importado (diseñado con Claude)"></div>`;
+          $('#iCheck', sh).textContent = diff ? 'Aplicar como nueva versión' : 'Revisar cambios';
+          if (!diff) parsed = null;
+        } catch (e) {
+          parsed = null;
+          box.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+          $('#iCheck', sh).textContent = 'Revisar cambios';
+        }
+      };
+      $('#iCheck', sh).addEventListener('click', () => {
+        if (!parsed) return preview();
+        const r = parsed;
+        if (r.exercises.length) {
+          ctx.store.update(FILES.exercises, (doc) => {
+            doc = doc && typeof doc === 'object' ? doc : {};
+            doc.items ||= [];
+            for (const e of r.exercises) {
+              if (!Object.values(e.muscles).includes(1)) continue;
+              const prev = doc.items.find((x) => x.name.toLowerCase() === e.name.toLowerCase());
+              const id = prev?.id || `mine:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+              doc.items = [...doc.items.filter((x) => x.id !== id), { id, name: e.name, muscles: e.muscles }];
+            }
+            return doc;
+          }, 'Ejercicios del plan importado');
+        }
+        if (savePlan(ctx, (p) => r.apply(p), $('#iWhy', sh)?.value || 'Plan importado')) { closeSheet(); ctx.render(); }
+      });
     },
   });
 }

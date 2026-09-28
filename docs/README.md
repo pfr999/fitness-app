@@ -11,6 +11,7 @@ autocontrol + PDFs de dieta/rutina por una única fuente de verdad usable desde 
 | [03-modelo-datos.md](03-modelo-datos.md) | Estructura de `data.json` y ficheros |
 | [04-motor-calculo.md](04-motor-calculo.md) | Fórmulas y algoritmos, con fuentes |
 | [decisiones.md](decisiones.md) | Registro de decisiones (ADR ligero) |
+| [formato-plan.md](formato-plan.md) | Formato para diseñar el plan con Claude e importarlo |
 | mock.html | Prototipo navegable (solo local, no se sube: contiene datos personales) |
 
 Fuentes de datos de alimentos: CIQUAL 2025 (ANSES, Licence Ouverte) y Open Food Facts (ODbL).
