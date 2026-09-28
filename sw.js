@@ -1,6 +1,6 @@
 // Service worker: cachea la app para abrir al instante y sin conexión.
 // Al publicar una versión nueva, CAMBIA `VERSION`: la app mostrará «Nueva versión disponible».
-const VERSION = 'v0.7.0';
+const VERSION = 'v0.7.1';
 const CACHE = `recomp-${VERSION}`;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'fonts/manrope-latin.woff2',

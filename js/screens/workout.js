@@ -65,7 +65,7 @@ export function render(ctx) {
         <input inputmode="decimal" data-f="kg" aria-label="kg serie ${k + 1}" value="${s?.kg != null ? fmt(s.kg, s.kg % 1 ? 1 : 0) : ''}" placeholder="${p ? fmt(p.kg, p.kg % 1 ? 1 : 0) : 'kg'}">
         <input inputmode="numeric" data-f="reps" aria-label="reps serie ${k + 1}" value="${s?.reps ?? ''}" placeholder="${p ? p.reps : 'reps'}">
         <input inputmode="decimal" data-f="rpe" aria-label="RPE serie ${k + 1}" value="${s?.rpe != null ? fmt(s.rpe, s.rpe % 1 ? 1 : 0) : ''}" placeholder="${p?.rpe != null ? fmt(p.rpe, p.rpe % 1 ? 1 : 0) : g.it.rpe ?? 'RPE'}">
-        <button type="button" class="mini ${s ? 'ok' : ''}" data-same aria-label="Apuntar serie ${k + 1} igual que la última vez" ${p || s ? '' : 'disabled style="opacity:.3"'}>${icon.check}</button></div>`;
+        <button type="button" class="mini ${s ? 'ok' : ''}" data-same aria-label="Serie ${k + 1} hecha">${icon.check}</button></div>`;
     }).join('');
     return `<div class="ex ${isOpen ? 'open' : ''}" data-ex="${esc(g.key)}">
       <button class="ex-h" data-toggle="${esc(date)}|${esc(g.key)}"><span class="ex-n ${done ? 'done' : ''}">${done ? '✓' : idx + 1}</span>
@@ -117,6 +117,7 @@ export function bind(root, ctx) {
 
   // guardar una serie cuando tiene kg y reps (o borrarla si se vacía)
   $$('.set-row', root).forEach((row) => {
+    const btn = $('[data-same]', row);
     const save = () => {
       const [key, kStr] = row.dataset.set.split(/\|(?=\d+$)/);
       const k = +kStr;
@@ -124,9 +125,9 @@ export function bind(root, ctx) {
       const group = row.closest('.ex');
       const name = group.querySelector('.ex-t b').textContent;
       const ex = resolveExercise({ name }, exs) || (key.startsWith('n:') ? null : exs.find((e) => e.id === key));
-      if (kg != null && (kg < 0 || kg > 1000)) return toast('Peso no válido');
-      if (reps != null && (reps < 0 || reps > 100)) return toast('Repeticiones no válidas');
-      if (rpe != null && (rpe < 1 || rpe > 10)) return toast('RPE entre 1 y 10');
+      if (kg != null && (kg < 0 || kg > 1000)) { toast('Peso no válido'); return false; }
+      if (reps != null && (reps < 0 || reps > 100)) { toast('Repeticiones no válidas'); return false; }
+      if (rpe != null && (rpe < 1 || rpe > 10)) { toast('RPE entre 1 y 10'); return false; }
       const complete = kg != null && reps != null;
       ctx.store.updateDay(date, (d) => {
         d.session ||= { day: rdName(), sets: [] };
@@ -138,18 +139,28 @@ export function bind(root, ctx) {
         }
         if (!d.session.sets.length) delete d.session;
       }, `Entreno ${fmtShort(date)}: ${name}${complete ? ` ${fmt(kg, kg % 1 ? 1 : 0)}×${reps}` : ''}`);
-      // marcar el ejercicio como hecho sin repintar mientras se escribe
-      const rows = $$('.set-row', group);
-      const filled = rows.filter((r) => $('[data-f="kg"]', r).value && $('[data-f="reps"]', r).value).length;
+      // actualizar en el sitio (sin repintar mientras se escribe): botón de la serie, contador y ✓ del ejercicio
+      btn.classList.toggle('ok', complete);
+      const saved = $$('.set-row', group).filter((r) => $('[data-same]', r).classList.contains('ok')).length;
       const cnt = group.querySelector('.cnt');
-      cnt.textContent = `${filled}/${cnt.textContent.split('/')[1]}`;
+      const planned = +cnt.textContent.split('/')[1];
+      cnt.textContent = `${saved}/${planned}`;
+      const n = group.querySelector('.ex-n');
+      n.classList.toggle('done', saved >= planned);
+      if (saved >= planned) n.textContent = '✓';
+      const aux = root.querySelector('.card .aux');
+      if (aux) { const all = $$('[data-same].ok', root).length; aux.textContent = `${all} ${all === 1 ? 'serie apuntada' : 'series apuntadas'}`; }
+      return complete;
     };
     $$('input', row).forEach((inp) => inp.addEventListener('change', save));
-    $('[data-same]', row)?.addEventListener('click', (e) => {
-      // rellena con lo de la última vez lo que esté vacío y guarda
+    btn.addEventListener('click', () => {
+      // «serie hecha»: lo que esté vacío se rellena con lo de la última vez (en gris) y se guarda
       $$('input', row).forEach((inp) => { if (!inp.value && /\d/.test(inp.placeholder)) inp.value = inp.placeholder; });
-      e.currentTarget.classList.add('ok');
-      save();
+      if (!save()) {
+        const kg = $('[data-f="kg"]', row), reps = $('[data-f="reps"]', row);
+        toast('Pon los kg y las repeticiones');
+        (kg.value ? reps : kg).focus();
+      }
     });
   });
 
