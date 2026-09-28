@@ -14,6 +14,17 @@ import * as progreso from './screens/progreso.js';
 import * as plan from './screens/plan.js';
 import { openSettings } from './screens/settings.js';
 import { seedDemo } from './screens/setup.js';
+import { CLAUDE_MD, DATA_DOC_VERSION } from './claude-md.js';
+
+/** Mantiene CLAUDE.md (instrucciones para Claude) en el repo de datos; solo escribe si cambió la versión. */
+async function ensureClaudeMd(store, s) {
+  const key = `claudeMd:${s.owner}/${s.repo}`;
+  try {
+    if (localStorage.getItem(key) === String(DATA_DOC_VERSION)) return;
+    await store.putText('CLAUDE.md', CLAUDE_MD, `Instrucciones para Claude (v${DATA_DOC_VERSION})`);
+    localStorage.setItem(key, String(DATA_DOC_VERSION));
+  } catch { /* se reintenta en la próxima apertura */ }
+}
 
 const SCREENS = { hoy, domingo: control, progreso, plan };
 const TITLES = { hoy: 'Hoy', domingo: 'Semana', progreso: 'Progreso', plan: 'Plan' };
@@ -94,6 +105,7 @@ export async function start(settings) {
   try {
     await store.sync();
     if (!store.get(FILES.config)) await store.ensureStructure();
+    if (settings.mode !== 'demo') ensureClaudeMd(store, settings); // en segundo plano
   } catch (e) {
     if (e instanceof AuthError) {
       toast('El token no es válido o ha caducado');
