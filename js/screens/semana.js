@@ -68,8 +68,18 @@ export function bindDays(root, ctx, from, to, onChange) {
     const today = ctx.today();
     const days = range(from, to).filter((d) => d <= today && !dietStatus(ctx.store.day(d)));
     for (const d of days) ctx.store.updateDay(d, (x) => { x.diet = { status: 'plan' }; }, `Revisión ${fmtShort(d)}: según plan`);
-    toast(`${days.length} días marcados según plan`);
     onChange();
+    toast(`${days.length} ${days.length === 1 ? 'día marcado' : 'días marcados'} según plan`, {
+      action: {
+        label: 'Deshacer',
+        fn: () => {
+          // estaban sin validar: se les quita la validación que se acaba de poner
+          for (const d of days) ctx.store.updateDay(d, (x) => { if (x.diet?.status === 'plan') delete x.diet; }, `Revisión ${fmtShort(d)}: deshecha`);
+          toast('Deshecho');
+          onChange();
+        },
+      },
+    });
   });
 }
 
@@ -107,6 +117,7 @@ export function dayReviewSheet(ctx, date, onDone) {
       </div>
 
       <div class="field"><label for="rN">Nota del día</label><textarea class="inp" id="rN" placeholder="Opcional">${esc(day.note || '')}</textarea></div>
+      ${ds.status ? `<button class="link" id="rReset" type="button" style="color:var(--amber);text-align:center">Dejar este día sin validar</button>` : ''}
       <div class="sheet-actions"><button class="btn primary" id="rSave">Guardar ${esc(fmtDayShort(date))}</button></div>
     </div>`, {
     bind: (sh) => {
@@ -123,6 +134,16 @@ export function dayReviewSheet(ctx, date, onDone) {
       $('#rMeals', sh).addEventListener('click', () => {
         closeSheet();
         setTimeout(() => ctx.nav({ tab: 'hoy', hoySub: 'comidas', date }), 80); // tras cerrar la hoja en el historial
+      });
+      $('#rReset', sh)?.addEventListener('click', () => {
+        const prev = { diet: structuredClone(ctx.store.day(date).diet), mc: ctx.store.day(date).meals_complete };
+        ctx.store.updateDay(date, (d) => { delete d.diet; delete d.meals_complete; }, `Revisión ${fmtShort(date)}: sin validar`);
+        closeSheet();
+        onDone?.();
+        toast(`${fmtDayShort(date)} sin validar`, { action: { label: 'Deshacer', fn: () => {
+          ctx.store.updateDay(date, (d) => { if (prev.diet) d.diet = prev.diet; if (prev.mc) d.meals_complete = true; }, `Revisión ${fmtShort(date)}: restaurada`);
+          onDone?.();
+        } } });
       });
       $('#rSave', sh).addEventListener('click', () => {
         const w = num($('#rW', sh).value);

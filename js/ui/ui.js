@@ -34,12 +34,21 @@ export function int(v) {
 
 // ---------- toast ----------
 let toastTimer;
-export function toast(text) {
+/** Aviso breve. Con `action` ({label, fn}) muestra un botón (p. ej. «Deshacer») y dura más. */
+export function toast(text, { action = null } = {}) {
   const el = $('#toast');
   el.querySelector('span').textContent = text;
+  el.querySelector('button')?.remove();
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = action.label;
+    b.addEventListener('click', () => { el.classList.remove('on'); action.fn(); });
+    el.appendChild(b);
+  }
   el.classList.add('on');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('on'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('on'), action ? 7000 : 2200);
 }
 
 // ---------- hoja inferior ----------

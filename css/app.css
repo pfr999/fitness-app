@@ -444,3 +444,10 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 .dl:not(.done) .dl-v{color:var(--ink-3);font-weight:700}
 .dl .go{color:var(--ink-3);display:grid}
 .dl .go svg{width:16px;height:16px}
+
+.toast{pointer-events:none}
+.toast button{pointer-events:auto;border:0;background:none;color:var(--accent-2);font:800 14px var(--font);padding:4px 2px 4px 10px;margin-left:4px;cursor:pointer}
+.toast{max-width:min(94vw,420px)}
+.toast span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dayrow{grid-template-columns:72px 50px 1fr 46px 46px}
+.dayrow .dd b{white-space:nowrap}
