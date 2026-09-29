@@ -125,3 +125,5 @@ Ver `docs/05-investigacion-apps.md` para el porqué.
   El ritmo, los avisos, la previsión, los colores y las frases del día dependen del objetivo; en
   mantenimiento y volumen pasarse de kcal no se marca. Kcal y macros del plan son opcionales: sin ellos,
   Comidas enseña lo que llevas y el gasto usa solo los días registrados.
+- **v1.6.1:** Entreno: un día marcado como descanso enseña solo «Día de descanso» (sin pestañas ni
+  ejercicios) con «Quitar descanso» para volver a la rutina si fue un error.
