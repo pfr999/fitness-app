@@ -18,7 +18,7 @@ macros no cuadran con las kcal.
 {
   "formato": "recomp-plan",
   "fase": "1e", "micro": "1/6",
-  "objetivos": { "peso_kg": 97, "cintura_cm": 91, "pasos": 10000, "sesiones_semana": 5, "sueno_h": 7.5, "ritmo_pct_semana": null },
+  "objetivos": { "objetivo": "perdida", "peso_kg": 97, "cintura_cm": 91, "pasos": 10000, "sesiones_semana": 5, "sueno_h": 7.5, "ritmo_pct_semana": null },
   "dieta": {
     "kcal_entreno": 3150, "kcal_descanso": 2850, "proteina_g": 260, "carbohidratos_g": 330, "grasas_g": 85,
     "comidas": [ { "nombre": "Desayuno", "porciones": { "P": 3, "C": 3, "G": 2 } } ],
@@ -33,7 +33,10 @@ macros no cuadran con las kcal.
 }
 ```
 - `reps`: número o `[mín, máx]`. `rpe`: 1–10.
-- `ritmo_pct_semana`: `null` = automático según % graso; o `[mín, máx]`.
+- `objetivo`: `perdida`, `mantenimiento`, `volumen` o `sin_objetivo` (solo registro: sin franjas ni avisos).
+- `ritmo_pct_semana`: `null` = automático según el objetivo; o `[mín, máx]` en % de peso por semana (en pérdida
+  y volumen, en positivo en la dirección del objetivo; en mantenimiento, con signo: `[-0.2, 0.2]`).
+- `kcal_entreno`, `kcal_descanso` y los macros pueden ser `null` (sin objetivo).
 - Porciones: `P` proteína, `C` carbohidrato, `G` grasa, `F` fruta, `L` lácteo.
 - `musculos` (opcional, para ejercicios fuera del catálogo): `1` directo, `0.5` indirecto. Claves:
   pecho, espalda, trapecio, delt_ant, delt_lat, delt_post, biceps, triceps, antebrazo, cuadriceps,

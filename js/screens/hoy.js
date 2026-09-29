@@ -3,7 +3,8 @@
 import { $, $$, esc, fmt, fmtK, num, int, signed, toast, openSheet, closeSheet, bindSeg, icon } from '../ui/ui.js';
 import { donut, sparkline } from '../ui/charts.js';
 import { addDays, fmtShort, fmtLong, range, weekStart, weekday, parseISO, daysBetween } from '../dates.js';
-import { FILES, planFor, sumItems, kcalTarget, dietStatus } from '../model.js';
+import { FILES, planFor, sumItems, dietStatus } from '../model.js';
+import { goalOf, favours } from '../engine/targets.js';
 import { weeklyRate } from '../engine/trend.js';
 import { dayReviewSheet } from './semana.js';
 import { isDue } from './control.js';
@@ -151,12 +152,21 @@ function insightFor(ctx, date, day, t, all) {
     return ['b', 'Este día está sin validar. Ciérralo con «Revisar este día» para que cuente bien en el gasto.'];
   }
   if (day.weight == null) return ['b', 'Pésate en ayunas y apúntalo: es lo que mueve tu tendencia.'];
-  if (!all.kcal) return ['b', `Objetivo de hoy: <b>${fmtK(t.kcal)} kcal</b> y <b>${fmtK(t.p)} g de proteína</b>. Apunta la primera comida en «Comidas».`];
-  const lk = t.kcal - all.kcal, lp = t.p - all.p;
-  if (lk < -t.kcal * 0.1) return ['a', `Vas ${fmtK(-lk)} kcal por encima del objetivo de hoy.`];
-  if (lp > 10) return ['b', `Te faltan <b>${fmtK(lp)} g de proteína</b>${lk > 0 ? ` y quedan ${fmtK(lk)} kcal` : ''}.`];
-  if (Math.abs(lk) <= t.kcal * 0.1) return ['ok', 'Día en rango: kcal dentro de ±10 % y proteína cumplida.'];
-  return ['ok', `Proteína cumplida. Quedan ${fmtK(lk)} kcal.`];
+  // kcal y proteína del plan son opcionales; el aviso por pasarse de kcal, solo si el objetivo es perder
+  const goal = goalOf(planFor(ctx.store.get(FILES.plan), date));
+  const hasK = t.kcal != null, hasP = t.p != null;
+  if (!all.kcal) {
+    const want = [hasK && `<b>${fmtK(t.kcal)} kcal</b>`, hasP && `<b>${fmtK(t.p)} g de proteína</b>`].filter(Boolean).join(' y ');
+    return ['b', `${want ? `Objetivo de hoy: ${want}. ` : ''}Apunta la primera comida en «Comidas».`];
+  }
+  const lk = hasK ? t.kcal - all.kcal : null, lp = hasP ? t.p - all.p : null;
+  if (goal === 'loss' && hasK && lk < -t.kcal * 0.1) return ['a', `Vas ${fmtK(-lk)} kcal por encima del objetivo de hoy.`];
+  if (hasP && lp > 10) return ['b', `Te faltan <b>${fmtK(lp)} g de proteína</b>${hasK && lk > 0 ? ` y quedan ${fmtK(lk)} kcal` : ''}.`];
+  const pOk = hasP ? 'Proteína cumplida. ' : '';
+  if (!hasK) return ['ok', `${pOk}Llevas ${fmtK(all.kcal)} kcal${hasP ? '' : ` y ${fmtK(all.p)} g de proteína`}.`];
+  if (Math.abs(lk) <= t.kcal * 0.1) return ['ok', `Día en rango: kcal dentro de ±10 %${hasP ? ' y proteína cumplida' : ''}.`];
+  if (lk > 0) return [goal === 'gain' ? 'b' : 'ok', `${pOk}Quedan ${fmtK(lk)} kcal.`];
+  return ['ok', `${pOk}Llevas ${fmtK(all.kcal)} kcal.`];
 }
 
 function renderDay(ctx) {
@@ -173,7 +183,8 @@ function renderDay(ctx) {
   const mp = mealPlan(v);
   const slots = mp.mode === 'fixed' ? mp.list.length : 0;
   const all = sumItems(mealsLogged.flatMap((m) => m.items));
-  const t = v ? dayTargets(v, day.trained) : { kcal: 0, p: 0 };
+  const t = v ? dayTargets(v, day.trained) : { kcal: null, p: null };
+  const goal = goalOf(v);
   const sets = (day.session?.sets || []).filter((s) => !s.warmup).length;
   const ds = dietStatus(day);
 
@@ -182,11 +193,13 @@ function renderDay(ctx) {
   const tr = i >= 0 ? a.trend[i] : null;
   const rate = tr ? weeklyRate(tr) : null;
   const spark = i >= 0 ? a.trend.slice(Math.max(0, i - 27), i + 1).map((x) => x?.level ?? null) : [];
-  const over = all.kcal > t.kcal * 1.1;
-  const kRing = donut({ pct: t.kcal ? all.kcal / t.kcal : 0, size: 108, stroke: 11, color: over ? 'var(--amber)' : 'var(--accent)',
-    big: isToday ? fmtK(Math.abs(t.kcal - all.kcal)) : fmtK(all.kcal), sm: isToday ? (all.kcal > t.kcal ? 'kcal de más' : 'kcal quedan') : `de ${fmtK(t.kcal)}` });
-  const pRing = donut({ pct: t.p ? all.p / t.p : 0, size: 84, stroke: 9, color: 'var(--blue)', big: fmtK(all.p), sm: `de ${fmtK(t.p)} g`, sm2: 'proteína' });
-  const hero = v ? `<div class="card hero2">${kRing}${pRing}<div class="wtr"><span class="k">Tendencia</span><span class="big num">${tr ? fmt(tr.level) : '—'}<small> kg</small></span>${rate && a.latest.rateReliable ? `<span class="rt num" style="color:${rate.kgWeek <= 0 ? 'var(--accent)' : 'var(--slate)'}">${rate.kgWeek <= 0 ? '↓' : '↑'} ${fmt(Math.abs(rate.kgWeek), 2)} kg/sem</span>` : `<span class="rt muted">${a.latest.dataDays ? `ritmo fiable en ${Math.max(0, 14 - a.latest.dataDays)} días` : ''}</span>`}${sparkline(spark, { w: 96, h: 28 })}</div></div>` : '';
+  // hoy: lo que queda; pasarse solo se cuenta («kcal de más») si el objetivo es perder
+  const left = isToday && t.kcal != null && (all.kcal <= t.kcal || goal === 'loss');
+  const kRing = donut({ pct: t.kcal ? all.kcal / t.kcal : 0, size: 108, stroke: 11, color: meals.kcalColor(v, all.kcal, t.kcal),
+    big: left ? fmtK(Math.abs(t.kcal - all.kcal)) : fmtK(all.kcal), sm: left ? (all.kcal > t.kcal ? 'kcal de más' : 'kcal quedan') : t.kcal != null ? `de ${fmtK(t.kcal)}` : 'kcal' });
+  const pRing = donut({ pct: t.p ? all.p / t.p : 0, size: 84, stroke: 9, color: 'var(--blue)', big: fmtK(all.p), sm: t.p != null ? `de ${fmtK(t.p)} g` : 'g', sm2: 'proteína' });
+  const fav = rate ? favours(goal, rate.kgWeek) : null;
+  const hero = v ? `<div class="card hero2">${kRing}${pRing}<div class="wtr"><span class="k">Tendencia</span><span class="big num">${tr ? fmt(tr.level) : '—'}<small> kg</small></span>${rate && a.latest.rateReliable ? `<span class="rt num" style="color:${fav === true ? 'var(--accent)' : fav === false ? 'var(--slate)' : 'var(--ink-2)'}">${rate.kgWeek <= 0 ? '↓' : '↑'} ${fmt(Math.abs(rate.kgWeek), 2)} kg/sem</span>` : `<span class="rt muted">${a.latest.dataDays ? `ritmo fiable en ${Math.max(0, 14 - a.latest.dataDays)} días` : ''}</span>`}${sparkline(spark, { w: 96, h: 28 })}</div></div>` : '';
   const [tone, text] = insightFor(ctx, date, day, t, all);
 
   const line = (id, ic, label, subl, value, done, bar = null) => `<button class="dl v1 ${done ? 'done' : ''}" id="${id}"><span class="ic">${ic}</span><span class="dl-l">${label}${subl ? `<small>${subl}</small>` : ''}${bar != null ? `<span class="mbar"><i style="width:${Math.min(100, bar * 100)}%"></i></span>` : ''}</span><span class="dl-v">${value}</span><span class="go">${icon.chevron}</span></button>`;
@@ -205,12 +218,13 @@ function renderDay(ctx) {
   const cfg = ctx.store.get(FILES.config) || {};
   const setup = [
     [!cfg.profile?.height_cm || !cfg.profile?.birth_year, 'Tu perfil (altura, año de nacimiento)', 'setProfile'],
-    [(v?.diet?.kcal?.train === 2800 && v?.diet?.kcal?.rest === 2500 && v?.diet?.protein_g === 200), 'Tu dieta (kcal y macros)', 'setDiet'],
+    // con «Sin objetivo» no se pide dieta; el peso objetivo solo tiene sentido al perder o ganar
+    [goal !== 'none' && v?.diet?.kcal?.train === 2800 && v?.diet?.kcal?.rest === 2500 && v?.diet?.protein_g === 200, 'Tu dieta (kcal y macros)', 'setDiet'],
     [!(v?.routine?.days || []).length, 'Tu rutina', 'setRoutine'],
-    [!v?.targets?.weight_kg, 'Tus objetivos (peso, pasos, sesiones)', 'setTargets'],
+    [(goal === 'loss' || goal === 'gain') && !v?.targets?.weight_kg, 'Tus objetivos (peso, pasos, sesiones)', 'setTargets'],
   ].filter(([todo]) => todo);
   const setupCard = setup.length && isToday ? `<div class="card" style="border-color:var(--accent)">
-    <div class="ch"><h2>Termina de configurar</h2><span class="aux">${4 - setup.length}/4</span></div>
+    <div class="ch"><h2>Termina de configurar</h2><span class="aux">${setup.length} por hacer</span></div>
     ${setup.map(([, label, id]) => `<button class="dl" id="${id}"><i class="st"></i><span class="dl-l" style="grid-column:span 2">${label}</span><span class="go">${icon.chevron}</span></button>`).join('')}
   </div>` : '';
 

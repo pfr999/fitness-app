@@ -68,7 +68,7 @@ export function emptyPlan() {
         phase: '',
         micro: '',
         reason: 'Plan inicial',
-        targets: { rate_pct_week: null, steps: 10000, sessions: 4, sleep_h: 7.5, waist_cm: null, weight_kg: null },
+        targets: { goal: 'maintain', rate_pct_week: null, steps: 10000, sessions: 4, sleep_h: 7.5, waist_cm: null, weight_kg: null },
         diet: { kcal: { train: 2800, rest: 2500 }, protein_g: 200, carbs_g: 280, fat_g: 80, meals: [], rules: [] },
         routine: { days: [] },
         supplements: [],
@@ -124,14 +124,44 @@ export function versionNumber(planDoc, version) {
   return vs.findIndex((x) => x.v === version.v) + 1;
 }
 
-/** Kcal objetivo del día según si se entrena. trained: true | false | undefined (desconocido). */
+/** Kcal del día de entreno y de descanso del plan (null si no se han puesto: son opcionales). */
+export function planKcal(version) {
+  const k = version?.diet?.kcal || {};
+  const ok = (x) => (typeof x === 'number' && x > 0 ? x : null);
+  const train = ok(k.train) ?? ok(k.rest), rest = ok(k.rest) ?? ok(k.train);
+  return train == null ? null : { train, rest };
+}
+
+/** Kcal objetivo del día según si se entrena. trained: true | false | undefined (desconocido). null si el plan no tiene kcal. */
 export function kcalTarget(version, trained) {
-  if (!version) return null;
-  const { train, rest } = version.diet.kcal;
-  if (trained === true) return train;
-  if (trained === false) return rest;
+  const k = planKcal(version);
+  if (!k) return null;
+  if (trained === true) return k.train;
+  if (trained === false) return k.rest;
   const s = Math.min(7, Math.max(0, version.targets?.sessions ?? 4));
-  return (s * train + (7 - s) * rest) / 7;
+  return (s * k.train + (7 - s) * k.rest) / 7;
+}
+
+/**
+ * Objetivo de kcal y macros del día. Los macros del plan son los del día de entreno: en descanso se
+ * escalan con las kcal salvo la proteína. Cada valor es null si el plan no lo tiene (son opcionales).
+ */
+export function dayTargets(version, trained) {
+  const d = version?.diet || {};
+  const k = planKcal(version);
+  const kcal = kcalTarget(version, trained);
+  const g = (x) => (typeof x === 'number' && x > 0 ? x : null);
+  const scale = k && kcal ? kcal / k.train : 1;
+  const sc = (x) => (g(x) == null ? null : g(x) * scale);
+  return { kcal, p: g(d.protein_g), c: sc(d.carbs_g), f: sc(d.fat_g) };
+}
+
+/**
+ * ¿Los días sin registrar se suponen «según el plan»? Solo si el plan tiene kcal y un objetivo
+ * (con «Sin objetivo» no hay plan que suponer: esos días no cuentan para el gasto).
+ */
+export function assumesPlan(version) {
+  return !!planKcal(version) && version?.targets?.goal !== 'none';
 }
 
 // ---------- Días ----------
@@ -182,21 +212,22 @@ export const loggedKcal = (day) => (day?.meals || []).reduce((a, m) => a + sumIt
  * - validado en la revisión semanal (day.diet) o día cerrado → lo que diga
  * - formato antiguo (respuesta semanal / por día del control) → ajuste sobre el plan
  * - sin validar → kcal del plan, marcado como supuesto (no registrar ≠ comer mal)
+ * Sin kcal en el plan (o «Sin objetivo»), lo que depende del plan no se sabe (null): solo cuenta lo registrado.
  */
 export function intakeFor(date, day, version, adherence = {}) {
-  const plan = kcalTarget(version, day?.trained);
+  const plan = assumesPlan(version) ? kcalTarget(version, day?.trained) : null;
   const ds = dietStatus(day);
   if (ds) {
     if (ds.status === 'logged') return { kcal: loggedKcal(day), assumed: false };
     if (ds.status === 'plan') return { kcal: plan, assumed: false };
     if (ds.status === 'over' || ds.status === 'under') {
-      if (typeof ds.kcal_delta !== 'number') return { kcal: null, assumed: false };
+      if (typeof ds.kcal_delta !== 'number' || plan == null) return { kcal: null, assumed: false };
       return { kcal: plan + ds.kcal_delta, assumed: false };
     }
     if (ds.status === 'unknown') return { kcal: null, assumed: false };
   }
   const a = adherence[date];
-  if (a === false) return { kcal: null, assumed: false };
+  if (a === false || plan == null) return { kcal: null, assumed: false };
   if (typeof a === 'number') return { kcal: plan + a, assumed: false };
   return { kcal: plan, assumed: true };
 }

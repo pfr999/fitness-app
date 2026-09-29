@@ -121,3 +121,7 @@ Ver `docs/05-investigacion-apps.md` para el porqué.
 - **v1.5.1:** Progreso con «Todas las medidas» (cada medida del control con su evolución), «Comparar dos
   datos» (medias semanales de dos series a elegir, con su correlación y la advertencia de que no es causa)
   y «Resumen del mes».
+- **v1.6:** objetivo de la fase en Plan → Objetivos: **Pérdida · Mantenimiento · Volumen · Sin objetivo**.
+  El ritmo, los avisos, la previsión, los colores y las frases del día dependen del objetivo; en
+  mantenimiento y volumen pasarse de kcal no se marca. Kcal y macros del plan son opcionales: sin ellos,
+  Comidas enseña lo que llevas y el gasto usa solo los días registrados.

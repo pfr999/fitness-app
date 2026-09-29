@@ -2,11 +2,11 @@
 // Es puro: no toca red ni DOM.
 
 import { addDays, range, daysBetween, isoWeek } from '../dates.js';
-import { planFor, intakeFor, kcalTarget } from '../model.js';
+import { planFor, intakeFor, kcalTarget, assumesPlan } from '../model.js';
 import { kalmanTrend, weeklyRate } from './trend.js';
 import { adaptiveTDEE, hallProjection, energyDensity, rmr } from './energy.js';
 import { faulkner, navyMale, navyFemale, whtr, ffm, sumSkinfolds, MDC } from './body.js';
-import { rateTargetForBodyFat } from './targets.js';
+import { rateBand, rateStatus, bandText } from './targets.js';
 
 /**
  * @param {{config:object, plan:object, days:Object<string,object>}} data  days = mapa fecha → día
@@ -46,13 +46,14 @@ export function analyze({ config, plan, days }, { today }) {
   // ---- ritmo y objetivos ----
   const rate = weeklyRate(curTrend);
   const version = planFor(plan, today);
-  const rateTarget = version?.targets?.rate_pct_week || rateTargetForBodyFat(body.bfMid, profile.sex);
+  // franja de ritmo del objetivo (con signo: negativo = bajar); null con «Sin objetivo»
+  const rateTarget = rateBand(version, { bfPct: body.bfMid, sex: profile.sex });
   const dataDays = daysBetween(firstWeight, today) + 1;
 
-  // ---- previsión con el plan actual ----
-  const planIntake = kcalTarget(version, undefined);
-  const goal = version?.targets?.weight_kg ?? null;
-  const projection = curTrend && curTDEE ? hallProjection({ W0: curTrend.level, E0: curTDEE.E, intake: planIntake, goal, rho }) : null;
+  // ---- previsión con el plan actual (solo si el plan tiene kcal y un objetivo) ----
+  const planIntake = assumesPlan(version) ? kcalTarget(version, undefined) : null;
+  const goal = rateTarget && rateTarget.goal !== 'maintain' ? version?.targets?.weight_kg ?? null : null;
+  const projection = curTrend && curTDEE && planIntake != null ? hallProjection({ W0: curTrend.level, E0: curTDEE.E, intake: planIntake, goal, rho }) : null;
 
   return {
     empty: false,
@@ -142,15 +143,24 @@ export function bodyComposition(checkins, profile, weightNow) {
 function alertsFor({ config, days, span, trend, rate, rateTarget, version, today, dataDays }) {
   const on = (id) => (config?.alerts || []).find((a) => a.id === id)?.on !== false;
   const out = [];
-  // Ritmo fuera de rango sostenido: comparar pendiente hoy y hace 7 días
-  if (dataDays >= 21 && rate) {
+  // Ritmo fuera de la franja del objetivo 2 semanas seguidas (hoy y hace 7 días). Sin objetivo, no hay aviso.
+  if (dataDays >= 21 && rate && rateTarget) {
     const past = trend[trend.length - 8];
     const pastPct = past ? (past.slope * 7 / past.level) * 100 : null;
-    const loss = -rate.pctWeek, pastLoss = pastPct == null ? null : -pastPct;
-    if (on('rate_high') && loss > rateTarget[1] && pastLoss > rateTarget[1])
-      out.push({ tone: 'warn', title: 'Ritmo de pérdida alto 2 semanas', text: `${fmt(loss, 2)} %/sem (objetivo ${fmt(rateTarget[0])}–${fmt(rateTarget[1])}). Riesgo para la masa magra.` });
-    if (on('rate_low') && loss < rateTarget[0] && pastLoss != null && pastLoss < rateTarget[0])
-      out.push({ tone: 'info', title: 'Ritmo por debajo del objetivo 2 semanas', text: `${fmt(loss, 2)} %/sem (objetivo ${fmt(rateTarget[0])}–${fmt(rateTarget[1])}).` });
+    const now = rateStatus(rateTarget, rate.pctWeek), before = rateStatus(rateTarget, pastPct);
+    const txt = `${fmt(rate.pctWeek, 2)} %/sem (objetivo: ${bandText(rateTarget)}).`;
+    if (now !== 'in' && now === before) {
+      const g = rateTarget.goal;
+      // «rápido» en la dirección del objetivo = rate_high; «lento» o en contra = rate_low
+      const fast = (g === 'loss' && now === 'below') || (g === 'gain' && now === 'above');
+      if (g === 'maintain') {
+        if (on('rate_high')) out.push({ tone: 'info', title: `${now === 'below' ? 'Bajando' : 'Subiendo'} de peso 2 semanas`, text: `${txt} Si quieres mantenerte, revisa la ingesta.` });
+      } else if (fast && on('rate_high')) {
+        out.push({ tone: 'warn', title: `${g === 'loss' ? 'Pierdes' : 'Ganas'} demasiado rápido 2 semanas`, text: `${txt} ${g === 'loss' ? 'Riesgo para la masa magra.' : 'Más grasa de la necesaria.'}` });
+      } else if (!fast && on('rate_low')) {
+        out.push({ tone: 'info', title: 'Ritmo por debajo del objetivo 2 semanas', text: txt });
+      }
+    }
   }
   // Pasos
   const goalSteps = version?.targets?.steps;

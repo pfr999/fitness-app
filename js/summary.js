@@ -1,11 +1,12 @@
 // Resumen en texto (Markdown) para Claude: se guarda como resumen.md y se copia desde la app.
 
 import { addDays, fmtShort, range, lastWeekday, nextWeekday, daysBetween } from './dates.js';
-import { FILES, planFor, currentPlan } from './model.js';
+import { FILES, planFor, currentPlan, planKcal, assumesPlan } from './model.js';
 import { weekSummary, adherenceMap } from './engine/analysis.js';
 import { weekBalance } from './engine/week.js';
 import { allExercises, loggedVolume, plannedVolume, exerciseHistory, strengthTrend, resolveExercise } from './engine/training.js';
 import { MUSCLE_LABEL } from './training/catalog.js';
+import { goalOf, GOAL_LABEL, bandText } from './engine/targets.js';
 
 const f = (n, d = 1) => (n == null || Number.isNaN(n) ? '—' : n.toFixed(d).replace('.', ','));
 const k = (n) => (n == null ? '—' : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
@@ -26,7 +27,7 @@ export function buildSummary(ctx) {
   lines.push('## Tendencias (motor de cálculo)');
   if (a.empty) lines.push('- Aún no hay pesadas registradas.');
   else {
-    lines.push(`- Peso tendencia (Kalman): ${f(L.trend?.level)} kg · ritmo ${f(L.rate?.kgWeek, 2)} kg/sem (${f(L.rate?.pctWeek, 2)} %/sem) · objetivo de pérdida ${f(L.rateTarget?.[0])}–${f(L.rateTarget?.[1])} %/sem${L.rateReliable ? '' : ' · (menos de 14 días de datos)'}`);
+    lines.push(`- Peso tendencia (Kalman): ${f(L.trend?.level)} kg · ritmo ${f(L.rate?.kgWeek, 2)} kg/sem (${f(L.rate?.pctWeek, 2)} %/sem) · objetivo ${GOAL_LABEL[goalOf(v)].toLowerCase()}${L.rateTarget ? ` (${bandText(L.rateTarget)})` : ''}${L.rateReliable ? '' : ' · (menos de 14 días de datos)'}`);
     lines.push(`- Gasto energético adaptativo: ${L.tdeeReliable ? `${k(L.tdee.E)} ± ${k(L.tdee.sd)} kcal` : 'aún sin datos suficientes (21 días)'}${L.tdeeAssumedShare > 0.5 ? ' · estimado sobre todo con las kcal del plan (sin registro de comidas)' : ''}`);
     const b = a.body;
     if (b.waist != null) lines.push(`- Cintura: ${f(b.waist)} cm · cintura/altura ${f(b.whtr, 2)}`);
@@ -43,7 +44,7 @@ export function buildSummary(ctx) {
   const B = weekBalance({ plan, days }, addDays(W, -6), W, { analysis: a.empty ? null : a, adherence: adherenceMap(checkins, days), exercises: allExercises(ctx.store.get('exercises.json')), until: today });
   lines.push(`## Balance de la semana (${fmtShort(addDays(W, -6))}–${fmtShort(W)}${W > today ? ', en curso' : ''})`);
   const E = B.energy;
-  lines.push(`- Kcal media/día: ${k(E.kcalMean)} (objetivo ${k(E.targetMean)}) · ${E.logged} días registrados, ${E.estimated} estimados${E.unknown ? `, ${E.unknown} sin dato` : ''}${E.pending ? `, ${E.pending} sin validar (se asume el plan)` : ''}${E.deficit != null ? ` · déficit medio ≈ ${k(E.deficit)} kcal` : ''}`);
+  lines.push(`- Kcal media/día: ${k(E.kcalMean)}${E.targetMean != null ? ` (objetivo ${k(E.targetMean)})` : ''} · ${E.logged} días registrados, ${E.estimated} estimados${E.unknown ? `, ${E.unknown} sin dato` : ''}${E.pending ? `, ${E.pending} sin validar${assumesPlan(planFor(plan, W)) ? ' (se asume el plan)' : ' (no cuentan)'}` : ''}${E.deficit != null ? ` · ${E.deficit >= 0 ? 'déficit' : 'superávit'} medio ≈ ${k(Math.abs(E.deficit))} kcal` : ''}`);
   if (B.macros) lines.push(`- Macros (media de ${B.macros.days} días registrados): P ${k(B.macros.p)}/${k(B.macros.target.p)} g · C ${k(B.macros.c)}/${k(B.macros.target.c)} g · G ${k(B.macros.f)}/${k(B.macros.target.f)} g`);
   lines.push(`- Pasos media ${k(B.steps.mean)}${B.steps.target ? `/${k(B.steps.target)}` : ''} · sesiones ${B.training.sessions}${B.training.target ? `/${B.training.target}` : ''} (${B.training.sets} series) · sueño ${f(B.sleep.mean)} h · pesadas ${B.weight.weighIns}/7`);
   if (B.weight.change != null) lines.push(`- Peso (tendencia): ${f(B.weight.start)} → ${f(B.weight.end)} kg (${B.weight.change > 0 ? '+' : ''}${f(B.weight.change, 2)} kg · ${f(B.weight.pctWeek, 2)} %/sem)`);
@@ -80,7 +81,9 @@ export function buildSummary(ctx) {
   lines.push('## Plan actual');
   if (v) {
     const d = v.diet;
-    lines.push(`- Dieta: ${k(d.kcal.train)} kcal entreno / ${k(d.kcal.rest)} descanso · P ${k(d.protein_g)} · C ${k(d.carbs_g)} · G ${k(d.fat_g)} g`);
+    const pk = planKcal(v);
+    lines.push(`- Objetivo: ${GOAL_LABEL[goalOf(v)]}`);
+    lines.push(`- Dieta: ${pk ? (pk.train === pk.rest ? `${k(pk.train)} kcal` : `${k(pk.train)} kcal entreno / ${k(pk.rest)} descanso`) : 'sin kcal objetivo'} · P ${k(d.protein_g)} · C ${k(d.carbs_g)} · G ${k(d.fat_g)} g`);
     const t = v.targets || {};
     lines.push(`- Objetivos: pasos ${k(t.steps)} · sesiones ${t.sessions ?? '—'} · sueño ${f(t.sleep_h)} h${t.weight_kg ? ` · peso ${f(t.weight_kg)} kg` : ''}${t.waist_cm ? ` · cintura ${f(t.waist_cm)} cm` : ''}`);
     if (v.routine?.days?.length) lines.push(`- Rutina: ${v.routine.days.map((x) => `${x.name} (${x.items.length} ejercicios)`).join(', ')}`);

@@ -10,6 +10,7 @@ import { hydratePhotos } from '../photos.js';
 import { sparkline } from '../ui/charts.js';
 import { loggedVolume, plannedVolume, exerciseHistory, strengthTrend, resolveExercise } from '../engine/training.js';
 import { exercisesOf, volumeBars } from './exercises.js';
+import { goalOf, favours, rateVerdict, bandText, GOAL_LABEL, MAINTAIN_BAND, GAIN_RATE } from '../engine/targets.js';
 
 const RANGES = [[28, '4 sem'], [56, '8 sem'], [84, '12 sem'], [0, 'Todo']];
 
@@ -24,16 +25,21 @@ export function render(ctx) {
 
   // KPIs
   const back = a.trend[Math.max(0, a.trend.length - 1 - Math.min(st.range || a.trend.length, a.trend.length - 1))];
-  const loss = L.rate ? -L.rate.pctWeek : null;
-  const tgt = L.rateTarget;
-  const inT = loss != null && loss >= tgt[0] && loss <= tgt[1];
+  const goal = goalOf(planFor(plan, today));
+  const band = L.rateTarget; // null = sin objetivo
+  const verdict = rateVerdict(band, L.rate?.pctWeek);
   const eta = L.projection?.days && L.goal ? fmtShort(addDays(today, Math.round(L.projection.days))) : null;
+  const dTrend = L.trend.level - back.level;
+  // previsión: fecha para el peso objetivo; sin él (o en mantenimiento), el peso previsto en 4 semanas
+  const in4 = L.projection && L.tdeeReliable ? L.projection.W(28) : null;
+  const fcBig = eta || (in4 != null && !L.goal ? `${fmt(in4)} <small>kg</small>` : '—');
+  const fcSub = eta ? `${fmt(L.goal)} kg con el plan actual` : in4 != null && !L.goal ? 'en 4 semanas con el plan actual' : !band ? 'Sin objetivo' : L.projection ? 'no alcanzable con las kcal actuales' : (goal === 'loss' || goal === 'gain') && !L.goal ? 'Pon un peso objetivo en Plan' : 'Pon kcal en Plan → Dieta';
 
   const kpis = `<div class="kpis">
-    <button class="kpi" data-fx><div class="k">Tendencia</div><div class="v num">${fmt(L.trend.level)} <small>kg</small></div><div class="d num ${L.trend.level - back.level < 0 ? 'up' : ''}">${signed(L.trend.level - back.level)} kg en el periodo</div><div class="m">Kalman</div></button>
-    <button class="kpi" data-fx><div class="k">Ritmo</div><div class="v num">${fmt(L.rate.pctWeek, 2)} <small>%/sem</small></div><div class="d num ${L.rateReliable ? (inT ? 'up' : 'warn') : 'muted'}">${L.rateReliable ? `objetivo ${fmt(tgt[0])}–${fmt(tgt[1])}` : `fiable en ${14 - L.dataDays} días`}</div><div class="m">${fmt(L.rate.kgWeek, 2)} kg/sem</div></button>
+    <button class="kpi" data-fx><div class="k">Tendencia</div><div class="v num">${fmt(L.trend.level)} <small>kg</small></div><div class="d num ${favours(goal, dTrend) ? 'up' : ''}">${signed(dTrend)} kg en el periodo</div><div class="m">Kalman</div></button>
+    <button class="kpi" data-fx><div class="k">Ritmo</div><div class="v num">${fmt(L.rate.pctWeek, 2)} <small>%/sem</small></div><div class="d num ${L.rateReliable && verdict ? (verdict.status === 'in' ? 'up' : 'warn') : 'muted'}">${!L.rateReliable ? `fiable en ${14 - L.dataDays} días` : band ? `objetivo: ${esc(bandText(band))}` : GOAL_LABEL.none}</div><div class="m">${fmt(L.rate.kgWeek, 2)} kg/sem</div></button>
     <button class="kpi" data-fx><div class="k">Gasto energético</div><div class="v num">${L.tdeeReliable ? `${fmtK(L.tdee.E)} <small>kcal</small>` : '—'}</div><div class="d num muted">${L.tdeeReliable ? `± ${fmtK(L.tdee.sd)} kcal` : `listo en ${Math.max(0, 21 - L.dataDays)} días`}</div><div class="m">${L.tdeeAssumedShare > 0.5 ? 'Con kcal del plan' : 'TDEE adaptativo'}</div></button>
-    <button class="kpi" data-fx><div class="k">Previsión</div><div class="v num">${eta || '—'}</div><div class="d num muted">${L.goal ? `${fmt(L.goal)} kg con el plan actual` : 'Pon un peso objetivo en Plan'}</div><div class="m">Modelo de Hall</div></button>
+    <button class="kpi" data-fx><div class="k">Previsión</div><div class="v num">${fcBig}</div><div class="d num muted">${fcSub}</div><div class="m">Modelo de Hall</div></button>
   </div>`;
 
   // Peso
@@ -96,12 +102,12 @@ export function render(ctx) {
       const days = ctx.store.allDays();
       const avg = (f) => rows.reduce((acc, x) => acc + f(x), 0) / rows.length;
       const I = avg((x) => x.kcal);
-      const tgt = avg((x) => kcalTarget(planFor(plan, x.date), days[x.date]?.trained) || 0);
+      const tgt = avg((x) => kcalTarget(planFor(plan, x.date), days[x.date]?.trained) || 0); // 0 = sin kcal en el plan
       const E = avg((x) => x.E ?? L.tdee.E);
       const vsPlan = I - tgt, bal = I - E;
       const pred = (bal * 7) / (a.rho || 7700), real = L.rate.kgWeek;
       balance30 = `<div class="card"><div class="ch"><h2>Balance de 30 días</h2><span class="aux">${rows.length} días</span></div>
-        <div class="b30"><div><span>¿Cumples el plan?</span><b class="num">${Math.abs(vsPlan) <= tgt * 0.05 ? 'Sí' : signed(vsPlan, 0) + ' kcal/día'}</b><small>comes ${fmtK(I)} · objetivo ${fmtK(tgt)}</small></div>
+        <div class="b30">${tgt ? `<div><span>¿Cumples el plan?</span><b class="num">${Math.abs(vsPlan) <= tgt * 0.05 ? 'Sí' : signed(vsPlan, 0) + ' kcal/día'}</b><small>comes ${fmtK(I)} · objetivo ${fmtK(tgt)}</small></div>` : `<div><span>Comes de media</span><b class="num">${fmtK(I)} kcal/día</b><small>sin objetivo de kcal en el plan</small></div>`}
         <div><span>¿Funciona el plan?</span><b class="num">${signed(bal, 0)} kcal/día</b><small>frente al gasto (${fmtK(E)}): predice ${signed(pred, 2)} kg/sem · tu tendencia ${signed(real, 2)}</small></div></div>
         <div class="muted small" style="margin-top:8px">Lo primero mide la adherencia; lo segundo, si ese objetivo te lleva al ritmo que buscas.</div></div>`;
     }
@@ -381,12 +387,15 @@ function formulasSheet(ctx) {
     <div class="fx"><b>Tendencia de peso · filtro de Kalman</b><code>estado = [nivel, pendiente]
 ruido diario σ ≈ 0,6 kg · días sin pesar = solo predicción</code><div class="muted small">Sin el retraso de la media de 7 días. Da el ritmo con su incertidumbre.</div></div>
     <div class="fx"><b>Gasto energético · TDEE adaptativo</b><code>TDEE = ingesta media 21 d − ρ · pendiente
-ρ ≈ ${fmtK(a.rho)} kcal/kg · suavizado bayesiano</code><div class="muted small">Los días sin registrar comidas cuentan como el plan; los que marques "me salí" en el control se excluyen.</div></div>
+ρ ≈ ${fmtK(a.rho)} kcal/kg · suavizado bayesiano</code><div class="muted small">Los días sin registrar comidas cuentan como el plan (si tiene kcal y un objetivo; si no, no cuentan); los que marques "me salí" en el control se excluyen.</div></div>
     <div class="fx"><b>Previsión · modelo de Hall</b><code>W(t) = W₀ + (ΔI/ε)·(1 − e^(−t·ε/ρ))
-ε ≈ 24 kcal/kg/día</code><div class="muted small">Tiene en cuenta que el gasto baja al perder peso.</div></div>
+ε ≈ 24 kcal/kg/día</code><div class="muted small">Tiene en cuenta que el gasto baja al perder peso (y sube al ganarlo).</div></div>
     <div class="fx"><b>Composición · Faulkner y Navy</b><code>%G Faulkner = 0,153 · (tríceps + subesc. + supraesp. + abdominal) + 5,783
 %G Navy = 495 / (1,0324 − 0,19077·log(cint − cuello) + 0,15456·log(alt)) − 450</code><div class="muted small">Rango, no número exacto. Un cambio es real si supera el mínimo detectable (cintura ${fmt(MDC.waist)} cm, pliegues ${fmt(MDC.sumSkinfolds, 0)} mm).</div></div>
-    <div class="fx"><b>Objetivo de ritmo</b><code>% graso &gt; 20 → 0,7–1,0 %/sem
-13–20 → 0,4–0,7 · &lt; 13 → 0,25–0,5
-Mujeres: &gt; 29 · 22–29 · &lt; 22</code><div class="muted small">Cuanto más delgado, más lento para conservar músculo. En mujeres los cortes son 9 puntos más altos (más grasa esencial). Editable en Plan → Objetivos.</div></div>`);
+    <div class="fx"><b>Objetivo de ritmo (automático)</b><code>Pérdida, según % graso:
+  &gt; 20 → 0,7–1,0 · 13–20 → 0,4–0,7 · &lt; 13 → 0,25–0,5 %/sem
+  (mujeres: &gt; 29 · 22–29 · &lt; 22)
+Mantenimiento: estable ±${fmt(MAINTAIN_BAND, 2)} %/sem
+Volumen: ganar ${fmt(GAIN_RATE[0], 2)}–${fmt(GAIN_RATE[1], 2)} %/sem
+Sin objetivo: sin franja ni avisos</code><div class="muted small">En pérdida, cuanto más delgado, más lento para conservar músculo; en volumen, despacio para no ganar grasa de más. Objetivo y franja se cambian en Plan → Objetivos.</div></div>`);
 }

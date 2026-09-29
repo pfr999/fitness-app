@@ -2,7 +2,7 @@
 // datos como CLAUDE.md. Así, al trabajar sobre el repo, Claude sabe qué es cada fichero y cómo cambiarlo
 // sin romper nada. Cambia DATA_DOC_VERSION cuando cambie el modelo de datos.
 
-export const DATA_DOC_VERSION = 8;
+export const DATA_DOC_VERSION = 9;
 
 export const CLAUDE_MD = `# Recomp · repo de datos
 
@@ -43,7 +43,7 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 { "v": <max v + 1>, "from": "<hoy AAAA-MM-DD>", "phase": "1e", "micro": "1/6",
   "reason": "<motivo corto>",
   "changes": [ { "at": "<fecha-hora ISO>", "reason": "<motivo corto>" } ],
-  "targets": { "rate_pct_week": null, "steps": 10000, "sessions": 5, "sleep_h": 7.5, "waist_cm": 91, "weight_kg": 97 },
+  "targets": { "goal": "loss", "rate_pct_week": null, "steps": 10000, "sessions": 5, "sleep_h": 7.5, "waist_cm": 91, "weight_kg": 97 },
   "diet": { "kcal": { "train": 3150, "rest": 2850 }, "protein_g": 260, "carbs_g": 330, "fat_g": 85,
             "meals_mode": "fixed",
             "meals": [ { "slot": "Comida 1", "target": { "p": 50, "c": 80, "f": 20 } }, { "slot": "Intra-entreno", "portions": { "C": 1 } }, { "slot": "Comida 3" } ],
@@ -54,7 +54,12 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
   "supplements": [ { "name": "Creatina", "dose": "5 g", "timing": "Con una comida", "kind": "supplement" } ] }
 \`\`\`
 - Si ya existe una versión con \`from\` = hoy, **modifica esa** (mismo \`v\`) y añade una entrada a su \`changes\`.
-- \`rate_pct_week\`: \`null\` = automático según % graso; o \`[mín, máx]\` en % de peso por semana.
+- \`goal\` (objetivo de la fase): \`loss\` pérdida · \`maintain\` mantenimiento · \`gain\` volumen · \`none\` sin objetivo
+  (solo registro: sin franjas, avisos ni previsión). Sin el campo = \`loss\`. **No lo cambies sin que el usuario lo pida.**
+- \`rate_pct_week\`: \`null\` = automático según el objetivo (pérdida: según % graso; mantenimiento: ±0,15 %/sem;
+  volumen: +0,15–0,35 %/sem); o \`[mín, máx]\` en % de peso por semana: en pérdida y volumen en positivo, en la
+  dirección del objetivo; en mantenimiento con signo (p. ej. \`[-0.2, 0.2]\`).
+- Kcal y macros de \`diet\` son opcionales (\`null\` = sin objetivo; si solo hay \`kcal.train\`, vale para todos los días).
 - \`routine.meso\` (opcional): mesociclo que empieza en \`start\` (lunes) con \`weeks\` semanas de carga, un RIR objetivo por
   semana (\`rir\`, RIR 2 ≈ RPE 8) y, si \`deload\`, una semana final de descarga (mitad de series, ~10 % menos de peso).
 - \`kind\`: \`supplement\` o \`medication\`. Porciones: P proteína, C carbohidrato, G grasa, F fruta, L lácteo.
@@ -86,5 +91,7 @@ autorregulación por músculo, nota, decisión).
 - Gasto energético adaptativo (TDEE) con la ingesta de cada día: registrada si \`diet.status = logged\`,
   la del plan si \`plan\`, plan ± \`kcal_delta\` si \`over/under\`; \`unknown\` no cuenta.
 - Volumen: series por músculo, directo 1 e indirecto ½. Franja útil 10–20 series/semana.
-- Objetivo de ritmo automático según % graso: >20 % → 0,7–1,0 · 13–20 % → 0,4–0,7 · <13 % → 0,25–0,5 %/sem.
+- Objetivo (\`targets.goal\`) y ritmo: en pérdida, automático según % graso: >20 % → 0,7–1,0 · 13–20 % → 0,4–0,7 ·
+  <13 % → 0,25–0,5 %/sem (mujeres: cortes 9 puntos más altos); mantenimiento ±0,15; volumen +0,15–0,35. Solo en
+  pérdida se marca comer de más. Sin kcal en el plan, o con \`none\`, los días sin registrar no cuentan para el gasto.
 `;

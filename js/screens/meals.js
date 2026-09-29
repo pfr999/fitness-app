@@ -4,7 +4,8 @@
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon, bindSeg, segValue, ask, askText } from '../ui/ui.js';
 import { donut } from '../ui/charts.js';
 import { addDays, fmtShort } from '../dates.js';
-import { FILES, planFor, kcalTarget, sumItems } from '../model.js';
+import { FILES, planFor, planKcal, sumItems, dayTargets } from '../model.js';
+import { goalOf } from '../engine/targets.js';
 import { loadFoods, isLoaded, findFoods, frequentFoods, byEan, byId, lookupBarcodeOnline, searchOnline, macrosFor, packageGrams } from '../foods/db.js';
 import { highlightTerms, norm } from '../foods/search.js';
 import { scannerSupported, startScanner } from '../foods/scanner.js';
@@ -50,13 +51,13 @@ function mealTarget(v, slot) {
 }
 const mealPortions = (v, slot) => (v?.diet?.meals || []).find((x) => x.slot === slot)?.portions || null;
 
-export function dayTargets(v, trained) {
-  const kcal = kcalTarget(v, trained);
-  const d = v.diet;
-  // los macros del plan son los del día de entreno: se escalan en días de descanso
-  const scale = d.kcal.train ? kcal / d.kcal.train : 1;
-  return { kcal, p: d.protein_g * (trained === false ? 1 : scale), c: d.carbs_g * scale, f: d.fat_g * scale };
-}
+export { dayTargets };
+
+/**
+ * Color del anillo de kcal: ámbar al pasarse más de un 10 % solo si el objetivo es perder grasa. En
+ * mantenimiento, volumen o sin objetivo, comer de más no se marca.
+ */
+export const kcalColor = (v, eaten, target) => (goalOf(v) === 'loss' && target && eaten > target * 1.1 ? 'var(--amber)' : 'var(--accent)');
 
 const mealOf = (day, slot) => (day.meals || []).find((m) => m.slot === slot) || { slot, items: [] };
 
@@ -72,7 +73,11 @@ export function render(ctx) {
   const all = sumItems((day.meals || []).flatMap((m) => m.items));
   const complete = day.meals_complete === true;
   const label = day.trained === true ? 'Día de entreno' : day.trained === false ? 'Día de descanso' : 'Entreno sin marcar';
-  const bar = (l, val, tgt, col) => `<div class="mac"><div class="row"><b>${l}</b><span class="num"><b style="color:var(--ink)">${fmtK(val)}</b> / ${fmtK(tgt)} g${tgt - val > 0 ? ` · quedan ${fmtK(tgt - val)}` : ''}</span></div><div class="bar"><i style="width:${Math.min(100, (val / (tgt || 1)) * 100)}%;background:${col}"></i></div></div>`;
+  // sin objetivo para ese macro (el plan no lo tiene): solo lo que llevas
+  const bar = (l, val, tgt, col) => (tgt == null
+    ? `<div class="mac"><div class="row"><b>${l}</b><span class="num"><b style="color:var(--ink)">${fmtK(val)}</b> g</span></div></div>`
+    : `<div class="mac"><div class="row"><b>${l}</b><span class="num"><b style="color:var(--ink)">${fmtK(val)}</b> / ${fmtK(tgt)} g${tgt - val > 0 ? ` · quedan ${fmtK(tgt - val)}` : ''}</span></div><div class="bar"><i style="width:${Math.min(100, (val / (tgt || 1)) * 100)}%;background:${col}"></i></div></div>`);
+  const pk = planKcal(v);
 
   const allDays = ctx.store.allDays();
   const saved = savedMealsOf(ctx);
@@ -101,11 +106,11 @@ export function render(ctx) {
   return `<div class="card">
       <div class="ch"><h2>Hoy llevas</h2><span class="badge ${day.trained === true ? 'g' : 'n'}">${label}</span></div>
       <div class="ring-wrap">
-        ${donut({ pct: t.kcal ? all.kcal / t.kcal : 0, size: 104, stroke: 10, color: all.kcal > t.kcal * 1.1 ? 'var(--amber)' : 'var(--accent)', big: fmtK(all.kcal), sm: `de ${fmtK(t.kcal)}`, sm2: 'kcal' })}
+        ${donut({ pct: t.kcal ? all.kcal / t.kcal : 0, size: 104, stroke: 10, color: kcalColor(v, all.kcal, t.kcal), big: fmtK(all.kcal), sm: t.kcal ? `de ${fmtK(t.kcal)}` : 'kcal', sm2: t.kcal ? 'kcal' : '' })}
         <div class="macros">${bar('Proteína', all.p, t.p, 'var(--blue)')}${bar('Carbos', all.c, t.c, 'var(--slate)')}${bar('Grasas', all.f, t.f, 'var(--slate)')}</div>
       </div>
       ${canCopyDay ? `<button class="btn secondary sm" id="copyDay" style="width:100%;margin-top:12px">${icon.copy} Copiar todo lo de ayer</button>` : ''}
-      ${day.trained == null ? `<div class="hint">Marca en «Día» si entrenas hoy: cambia el objetivo (entreno ${fmtK(v.diet.kcal.train)} · descanso ${fmtK(v.diet.kcal.rest)}).</div>` : ''}
+      ${day.trained == null && pk && pk.train !== pk.rest ? `<div class="hint">Marca en «Día» si entrenas hoy: cambia el objetivo (entreno ${fmtK(pk.train)} · descanso ${fmtK(pk.rest)}).</div>` : ''}
     </div>
     ${cards}
     ${!slots.length ? `<div class="card empty"><b>Sin comidas todavía</b>Añade la primera del día.</div>` : ''}
@@ -538,7 +543,8 @@ function gramsSheet(ctx, date, slot, food, { initial = null, initialUnit = null,
           const t = dayTargets(v, day.trained);
           const now = sumItems((day.meals || []).flatMap((m) => m.items));
           const extra = trayN ? TRAY.items.reduce((a, e) => { const y = macrosFor(e.food.per100, e.g); a.kcal += y.kcal; a.p += y.p; a.c += y.c; a.f += y.f; return a; }, { kcal: 0, p: 0, c: 0, f: 0 }) : { kcal: 0, p: 0, c: 0, f: 0 };
-          const line = (l, cur, add, goal, col) => `<div class="imp"><span>${l}</span><div class="bar2"><i class="pre" style="width:${Math.min(100, ((cur + add) / (goal || 1)) * 100)}%;background:${col}"></i><i style="width:${Math.min(100, (cur / (goal || 1)) * 100)}%;background:${col}"></i></div><span class="num"><b>${fmtK(cur + add)}</b> / ${fmtK(goal)}</span></div>`;
+          // sin objetivo para ese valor: barra vacía y solo la cifra
+          const line = (l, cur, add, goal, col) => `<div class="imp"><span>${l}</span><div class="bar2">${goal ? `<i class="pre" style="width:${Math.min(100, ((cur + add) / goal) * 100)}%;background:${col}"></i><i style="width:${Math.min(100, (cur / goal) * 100)}%;background:${col}"></i>` : ''}</div><span class="num"><b>${fmtK(cur + add)}</b>${goal ? ` / ${fmtK(goal)}` : ''}</span></div>`;
           imp.innerHTML = `<div class="grp" style="margin:0 0 6px">Así queda el día</div>${line('kcal', now.kcal + extra.kcal, x.kcal, t.kcal, 'var(--accent)')}${line('Proteína', now.p + extra.p, x.p, t.p, 'var(--blue)')}${line('Carbos', now.c + extra.c, x.c, t.c, 'var(--slate)')}${line('Grasas', now.f + extra.f, x.f, t.f, 'var(--slate)')}`;
         }
       };
@@ -576,7 +582,9 @@ function gramsSheet(ctx, date, slot, food, { initial = null, initialUnit = null,
       $('#solveIn', sh)?.addEventListener('focus', (e) => e.target.select());
       $('#fillP', sh)?.addEventListener('click', () => {
         const day = ctx.store.day(date);
-        const falta = dayTargets(v, day.trained).p - sumItems((day.meals || []).flatMap((m) => m.items)).p;
+        const tp = dayTargets(v, day.trained).p;
+        if (tp == null) return toast('Tu plan no tiene objetivo de proteína');
+        const falta = tp - sumItems((day.meals || []).flatMap((m) => m.items)).p;
         if (falta <= 0) return toast('Ya tienes la proteína del día');
         $('#solveIn', sh).value = fmtK(falta); solve();
       });
