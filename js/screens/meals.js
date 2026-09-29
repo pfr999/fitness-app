@@ -1,7 +1,7 @@
 // Hoy → Comidas: registro de alimentos por gramos, totales por comida y día frente al objetivo,
 // alimentos propios, escáner de código de barras y botón «Día completo».
 
-import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon, bindSeg } from '../ui/ui.js';
+import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon, bindSeg, ask } from '../ui/ui.js';
 import { ring } from '../ui/charts.js';
 import { addDays, fmtShort } from '../dates.js';
 import { FILES, planFor, kcalTarget, sumItems } from '../model.js';
@@ -186,11 +186,11 @@ function unitsOf(food) {
 const isPlanned = (ctx, date, slot) => mealPlan(planFor(ctx.store.get(FILES.plan), date)).list.some((m) => m.slot === slot);
 const dropExtra = (ctx, date, slot) => { const l = ctx.state.extraMeals?.[date]; if (l) ctx.state.extraMeals[date] = l.filter((x) => x !== slot); };
 
-function removeMeal(ctx, date, slot) {
+async function removeMeal(ctx, date, slot) {
   const day = ctx.store.day(date);
   const m = mealOf(day, slot);
   const what = m.items.length ? ` y ${m.items.length === 1 ? 'su alimento' : `sus ${m.items.length} alimentos`}` : '';
-  if (!confirm(`¿Seguro que quieres borrar «${slot}»${what} de este día?`)) return;
+  if (!(await ask({ title: `¿Borrar «${slot}»?`, text: `Se quita de este día${what}. Podrás deshacerlo justo después.`, ok: 'Borrar', danger: true }))) return;
   const before = { meals: structuredClone(day.meals || null), hidden: structuredClone(day.hidden_meals || null), order: structuredClone(day.meal_order || null) };
   const planned = isPlanned(ctx, date, slot);
   if (m.items.length || planned) {

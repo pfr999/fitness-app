@@ -1,7 +1,7 @@
 // Hoy → Entreno: la sesión del día con registro de series (kg, reps, RPE), la última marca de cada
 // ejercicio como referencia y la sugerencia de subir carga (doble progresión).
 
-import { $, $$, esc, fmt, num, int, toast, openSheet, closeSheet, bindSeg, icon } from '../ui/ui.js';
+import { $, $$, esc, fmt, num, int, toast, openSheet, closeSheet, bindSeg, icon, ask } from '../ui/ui.js';
 import { addDays, fmtShort, range } from '../dates.js';
 import { FILES, planFor } from '../model.js';
 import { resolveExercise, progressionHint } from '../engine/training.js';
@@ -183,8 +183,8 @@ export function bind(root, ctx) {
     ctx.store.updateDay(date, (d) => { d.trained = true; d.session = { ...(d.session || { sets: [] }), day: name }; }, `Entreno ${fmtShort(date)}: ${name}`);
     toast(`${name}: hecha`); ctx.render();
   });
-  $('#sessRest', root)?.addEventListener('click', () => {
-    if ((ctx.store.day(date).session?.sets || []).length && !confirm('Hay series apuntadas hoy. ¿Borrarlas y marcar descanso?')) return;
+  $('#sessRest', root)?.addEventListener('click', async () => {
+    if ((ctx.store.day(date).session?.sets || []).length && !(await ask({ title: '¿Marcar descanso?', text: 'Hay series apuntadas hoy. Se borrarán.', ok: 'Borrar y marcar', danger: true }))) return;
     ctx.store.updateDay(date, (d) => { d.trained = false; delete d.session; }, `Descanso ${fmtShort(date)}`);
     toast('Día de descanso'); ctx.render();
   });

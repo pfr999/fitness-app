@@ -457,3 +457,17 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 .vol.vs{grid-template-columns:132px 1fr 52px}
 .vol .track .plan{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink-2);border-radius:1px;transform:translateX(-1px)}
 .vol b small{font-size:11px;color:var(--ink-3);font-weight:700}
+
+/* ---------- diálogo ---------- */
+.dlg-scrim{position:fixed;inset:0;background:rgba(10,12,12,.5);z-index:80;display:none;align-items:center;justify-content:center;padding:24px}
+.dlg-scrim.on{display:flex;animation:fadein .15s}
+.dlg{width:100%;max-width:360px;background:var(--surface);border-radius:22px;padding:20px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,.35);animation:pop .18s cubic-bezier(.2,.8,.2,1)}
+@keyframes pop{from{transform:scale(.96);opacity:.6}to{transform:none;opacity:1}}
+.dlg h3{margin:0 0 6px;font-size:18px;font-weight:800;letter-spacing:-.01em}
+.dlg p{margin:0 0 14px;color:var(--ink-2);font-size:14.5px;line-height:1.45}
+.dlg .inp{margin-bottom:14px}
+.dlg-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dlg-actions .btn{min-height:48px;font-size:15px}
+.btn.danger{background:#C0392B;color:#fff}
+:root[data-theme="dark"] .btn.danger{background:#E0564A}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.danger{background:#E0564A}}

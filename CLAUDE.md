@@ -43,6 +43,8 @@ Pestañas en la URL (tras cargar):  `#hoy`, `#domingo` (Semana), `#progreso`, `#
 - Guardar **no repinta**: `ctx.store.update/updateDay` es optimista y no redibuja; si la pantalla debe
   cambiar, llama a `ctx.render()` después (nunca mientras hay un campo con el foco).
 - Navegación con `ctx.nav({...})` (deja entrada en el historial para el botón «atrás»).
+- **Nunca** `confirm()`, `prompt()` ni `alert()` del navegador: usa `ask()` / `askText()` de `js/ui/ui.js`
+  (diálogo propio; lo destructivo con `danger: true` y, si se puede, «Deshacer» con `toast(texto, { action })`).
 - Lo derivado se calcula; en los datos solo se guarda lo medido.
 - Cambios en el modelo de datos: actualiza `docs/03-modelo-datos.md` y, si afectan a cómo Claude debe
   tratar el repo de datos, `js/claude-md.js` **subiendo `DATA_DOC_VERSION`**.

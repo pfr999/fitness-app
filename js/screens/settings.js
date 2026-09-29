@@ -1,6 +1,6 @@
 // Ajustes: perfil, tema, día de control, conexión y exportación.
 
-import { $, esc, fmt, num, int, toast, openSheet, closeSheet, bindSeg, segValue, download } from '../ui/ui.js';
+import { $, esc, fmt, num, int, toast, openSheet, closeSheet, bindSeg, segValue, download, ask, askText } from '../ui/ui.js';
 import { FILES } from '../model.js';
 import { LocalBackend } from '../data/local.js';
 import { idb } from '../data/idb.js';
@@ -62,21 +62,21 @@ export function openSettings(ctx, { saveSettings, setTheme, getTheme }) {
         for (const [path, doc] of ctx.store.docs) out[path] = doc.data;
         download(`recomp-datos-${today()}.json`, JSON.stringify(out, null, 2));
       });
-      $('#sToken', sh)?.addEventListener('click', () => {
-        const t = prompt('Pega el nuevo token (fine-grained, Contents: read/write)');
+      $('#sToken', sh)?.addEventListener('click', async () => {
+        const t = await askText({ title: 'Cambiar token', text: 'Pega el nuevo token de GitHub (fine-grained, solo el repo de datos, Contents: Read and write).', placeholder: 'github_pat_…', type: 'password', ok: 'Guardar token' });
         if (!t) return;
         saveSettings({ ...s, token: t.trim() });
         location.reload();
       });
       $('#sResetDemo', sh)?.addEventListener('click', async () => {
-        if (!confirm('¿Borrar los datos de demo y generar unos nuevos?')) return;
+        if (!(await ask({ title: '¿Reiniciar la demo?', text: 'Se borran los datos de demo y se generan unos nuevos.', ok: 'Reiniciar', danger: true }))) return;
         await LocalBackend.wipe();
         for (const k of await idb.keys('doc:demo:')) await idb.del(k);
         for (const k of await idb.keys('pending:demo:')) await idb.del(k);
         location.reload();
       });
       $('#sLogout', sh).addEventListener('click', async () => {
-        if (ctx.store.pending.size && !confirm('Hay cambios sin subir. Si desconectas se perderán. ¿Seguir?')) return;
+        if (!(await ask({ title: '¿Desconectar este dispositivo?', text: ctx.store.pending.size ? 'Hay cambios sin subir y se perderán. Tus datos en GitHub no se tocan.' : 'Se borra el token y la caché de este móvil. Tus datos en GitHub no se tocan.', ok: 'Desconectar', danger: true }))) return;
         await ctx.store.flush();
         const ns = s.mode === 'demo' ? 'demo' : `${s.owner}/${s.repo}`;
         for (const pre of ['doc:', 'pending:', 'photo:']) for (const k of await idb.keys(`${pre}${ns}:`)) await idb.del(k);

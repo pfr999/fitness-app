@@ -1,6 +1,6 @@
 // Plan: rutina, dieta, suplementos/medicación y objetivos. Cada cambio crea una versión con fecha y motivo.
 
-import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, segValue, icon } from '../ui/ui.js';
+import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, segValue, icon, ask } from '../ui/ui.js';
 import { addDays, fmtShort } from '../dates.js';
 import { FILES, currentPlan, newPlanVersion, kcalTarget, versionNumber } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
@@ -384,10 +384,10 @@ function daySheet(ctx, idx) {
       };
       bindRows();
       $('#addItem', sh).addEventListener('click', () => { redraw([...collect(), { name: '', sets: 3, reps: [8, 10], rpe: 8 }]); $$('[data-item]', sh).pop()?.querySelector('[data-f="name"]').focus(); });
-      $('#daySave', sh).addEventListener('click', () => {
+      $('#daySave', sh).addEventListener('click', async () => {
         const items = collect().filter((x) => x.name);
         const noMuscles = items.filter((x) => x._custom && !Object.values(x._muscles).includes(1));
-        if (noMuscles.length && !confirm(`${noMuscles.map((x) => x.name).join(', ')}: sin músculo directo marcado. No contarán en el volumen. ¿Guardar igualmente?`)) return;
+        if (noMuscles.length && !(await ask({ title: 'Ejercicios sin músculos', text: `${noMuscles.map((x) => x.name).join(', ')}: sin músculo directo marcado. No contarán en el volumen.`, ok: 'Guardar igualmente' }))) return;
         // ejercicios con músculos propios → exercises.json (se reconocen por nombre en adelante)
         const customs = items.filter((x) => x._custom && Object.values(x._muscles).includes(1));
         if (customs.length) {
@@ -408,8 +408,8 @@ function daySheet(ctx, idx) {
         const ok = savePlan(ctx, (p) => { if (isNew) p.routine.days.push(next); else p.routine.days[idx] = next; }, $('#why', sh).value);
         if (ok) { if (isNew) ctx.state.planDay = v.routine.days.length; closeSheet(); ctx.render(); }
       });
-      $('#dayDel', sh)?.addEventListener('click', () => {
-        if (!confirm(`¿Eliminar ${day.name} del plan? Las versiones anteriores lo conservan.`)) return;
+      $('#dayDel', sh)?.addEventListener('click', async () => {
+        if (!(await ask({ title: `¿Eliminar ${day.name}?`, text: 'Se quita de la rutina en una versión nueva del plan; las anteriores lo conservan.', ok: 'Eliminar', danger: true }))) return;
         if (savePlan(ctx, (p) => { p.routine.days.splice(idx, 1); }, $('#why', sh).value || `Quita ${day.name}`)) { ctx.state.planDay = 0; closeSheet(); ctx.render(); }
       });
     },
@@ -437,8 +437,8 @@ function suppSheet(ctx, idx, kind = 'supplement') {
         if (!next.name) return toast('Pon un nombre');
         if (savePlan(ctx, (p) => { if (isNew) p.supplements.push(next); else p.supplements[idx] = next; }, $('#why', sh).value)) { ctx.state.planTab = 'supl'; closeSheet(); ctx.render(); }
       });
-      $('#sDel', sh)?.addEventListener('click', () => {
-        if (!confirm(`¿Seguro que dejas de tomar «${s.name}»? Se crea una versión nueva del plan (las anteriores lo conservan).`)) return;
+      $('#sDel', sh)?.addEventListener('click', async () => {
+        if (!(await ask({ title: `¿Dejar de tomar «${s.name}»?`, text: 'Se crea una versión nueva del plan; las anteriores lo conservan.', ok: 'Dejar de tomar', danger: true }))) return;
         if (savePlan(ctx, (p) => { p.supplements.splice(idx, 1); }, $('#why', sh).value)) { closeSheet(); ctx.render(); }
       });
     },
@@ -495,10 +495,10 @@ function historySheet(ctx) {
       </div></div>`; }).join('')}
   </div>`, {
     bind: (sh) => {
-      $$('[data-delv]', sh).forEach((b) => b.addEventListener('click', () => {
+      $$('[data-delv]', sh).forEach((b) => b.addEventListener('click', async () => {
         const v = +b.dataset.delv;
         const x = vs.find((y) => y.v === v);
-        if (!confirm(`¿Borrar la versión del ${fmtShort(x.from)} con todos sus cambios? No se puede deshacer desde la app (queda en el historial de GitHub).`)) return;
+        if (!(await ask({ title: `¿Borrar la versión del ${fmtShort(x.from)}?`, text: 'Con todos sus cambios. No se puede deshacer desde la app (queda en el historial de GitHub).', ok: 'Borrar', danger: true }))) return;
         ctx.store.update(FILES.plan, (d) => {
           const rest = d.versions.filter((y) => y.v !== v);
           // Si se borra la versión más antigua, la siguiente pasa a cubrir desde esa fecha

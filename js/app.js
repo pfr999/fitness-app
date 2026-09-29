@@ -6,7 +6,7 @@ import { analyze } from './engine/analysis.js';
 import { Store } from './data/store.js';
 import { GitHubBackend, AuthError } from './data/github.js';
 import { LocalBackend } from './data/local.js';
-import { $, $$, esc, toast, initSheet, icon, sheetOpen, closeSheet, consumeIgnorePop } from './ui/ui.js';
+import { $, $$, esc, toast, initSheet, icon, sheetOpen, closeSheet, consumeIgnorePop, dialogOpen, closeDialog } from './ui/ui.js';
 import * as setup from './screens/setup.js';
 import * as hoy from './screens/hoy.js';
 import * as control from './screens/control.js';
@@ -72,6 +72,7 @@ function nav(patch) {
 }
 window.addEventListener('popstate', (e) => {
   if (consumeIgnorePop()) return;               // lo provocó cerrar una hoja desde la app
+  if (dialogOpen()) { closeDialog(null, { fromPop: true }); return; }
   if (sheetOpen()) { closeSheet({ fromPop: true }); return; }
   const st = e.state;
   if (!st || !ctx.store) return;

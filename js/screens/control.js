@@ -1,6 +1,6 @@
 // Control semanal: medidas → fotos → cómo ha ido → resumen y decisión. Pasos saltables.
 
-import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, bindSeg, icon, alertBox, signed } from '../ui/ui.js';
+import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, bindSeg, icon, alertBox, signed, ask } from '../ui/ui.js';
 import { addDays, fmtShort, range, lastWeekday, nextWeekday, nearestWeekday, weekday, daysBetween, fmtDayShort } from '../dates.js';
 import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
 import { analyze, weekSummary } from '../engine/analysis.js';
@@ -106,8 +106,8 @@ export function bind(root, ctx) {
   const move = (k) => ctx.nav({ ctlStep: Math.max(1, Math.min(STEPS.length, st.step + k)) });
   $('#prev', root).addEventListener('click', () => move(-1));
   $('#skip', root)?.addEventListener('click', () => move(1));
-  $('#cancelEdit', root)?.addEventListener('click', () => {
-    if (!confirm('¿Salir del control? Lo que hayas revisado de cada día ya está guardado; medidas, valoraciones y decisión no.')) return;
+  $('#cancelEdit', root)?.addEventListener('click', async () => {
+    if (!(await ask({ title: '¿Salir del control?', text: 'Lo revisado de cada día ya está guardado; las medidas, valoraciones y la decisión de este control, no.', ok: 'Salir sin guardar', danger: true }))) return;
     ctx.state.ctl = null; ctx.render();
   });
   $('#next', root).addEventListener('click', () => (st.step === STEPS.length ? save(ctx) : move(1)));
@@ -154,8 +154,8 @@ export function bind(root, ctx) {
     d.weight = ctx.store.day(v).weight ?? null;
     ctx.render();
   });
-  $('#delCk', root)?.addEventListener('click', () => {
-    if (!d.origDate || !confirm(`¿Borrar el control del ${fmtShort(d.origDate)}? Las fotos quedan en el historial del repo.`)) return;
+  $('#delCk', root)?.addEventListener('click', async () => {
+    if (!d.origDate || !(await ask({ title: `¿Borrar el control del ${fmtShort(d.origDate)}?`, text: 'Se borran sus medidas, valoraciones y decisión. Las fotos siguen en el historial del repo.', ok: 'Borrar', danger: true }))) return;
     ctx.store.updateDay(d.origDate, (day) => { delete day.checkin; }, `Borra control ${fmtShort(d.origDate)}`);
     ctx.state.ctl = null;
     toast('Control borrado');
@@ -370,7 +370,7 @@ async function save(ctx) {
   const autoreg = Object.fromEntries(shown.map((m) => [m, { soreness: 2, performance: 2, ...(d.autoreg[m] || {}) }]));
   const checkin = { autoreg: Object.keys(autoreg).length ? autoreg : undefined, measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence: d.adherence.status === 'plan' ? undefined : d.adherence, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
   const target = ctx.store.day(d.date);
-  if (d.date !== d.origDate && target.checkin && !confirm(`Ya hay un control el ${fmtShort(d.date)}. ¿Sustituirlo?`)) return;
+  if (d.date !== d.origDate && target.checkin && !(await ask({ title: `Ya hay un control el ${fmtShort(d.date)}`, text: '¿Sustituirlo por este?', ok: 'Sustituir', danger: true }))) return;
   if (d.origDate && d.origDate !== d.date) {
     ctx.store.updateDay(d.origDate, (day) => { delete day.checkin; }, `Mueve control ${fmtShort(d.origDate)} → ${fmtShort(d.date)}`);
   }

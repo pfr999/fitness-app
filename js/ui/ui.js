@@ -81,7 +81,67 @@ export function consumeIgnorePop() {
 }
 export function initSheet() {
   $('#scrim').addEventListener('click', (e) => { if (e.target.id === 'scrim') closeSheet(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (dialogOpen()) closeDialog(null); else closeSheet(); } });
+}
+
+// ---------- diálogo propio (sustituye a confirm/prompt del navegador) ----------
+let dlgResolve = null;
+export const dialogOpen = () => !!document.getElementById('dlg')?.classList.contains('on');
+
+function dialogEl() {
+  let el = document.getElementById('dlg');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'dlg';
+  el.className = 'dlg-scrim';
+  el.innerHTML = '<div class="dlg" role="alertdialog" aria-modal="true"></div>';
+  el.addEventListener('click', (e) => { if (e.target === el) closeDialog(null); });
+  document.body.appendChild(el);
+  return el;
+}
+
+/** Cierra el diálogo con un resultado. fromPop: lo cerró el botón «atrás». */
+export function closeDialog(value, { fromPop = false } = {}) {
+  const el = document.getElementById('dlg');
+  if (!el?.classList.contains('on')) return;
+  el.classList.remove('on');
+  const r = dlgResolve; dlgResolve = null;
+  if (!fromPop && history.state?.dialog) { ignorePop = true; history.back(); }
+  r?.(value);
+}
+
+function showDialog(html, bind) {
+  const el = dialogEl();
+  el.querySelector('.dlg').innerHTML = html;
+  if (!el.classList.contains('on')) history.pushState({ ...(history.state || {}), dialog: true }, '');
+  el.classList.add('on');
+  return new Promise((resolve) => { dlgResolve = resolve; bind(el); });
+}
+
+/**
+ * Pregunta de confirmación. Devuelve true/false.
+ * ask({ title, text, ok = 'Aceptar', cancel = 'Cancelar', danger = false })
+ */
+export function ask({ title, text = '', ok = 'Aceptar', cancel = 'Cancelar', danger = false }) {
+  return showDialog(`<h3>${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}
+    <div class="dlg-actions"><button type="button" class="btn secondary" data-r="0">${esc(cancel)}</button><button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-r="1">${esc(ok)}</button></div>`,
+  (el) => {
+    el.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => closeDialog(b.dataset.r === '1')));
+    setTimeout(() => el.querySelector('[data-r="1"]')?.focus(), 50);
+  }).then((v) => v === true);
+}
+
+/** Pide un texto. Devuelve el texto o null si se cancela. */
+export function askText({ title, text = '', placeholder = '', ok = 'Guardar', type = 'text' }) {
+  return showDialog(`<h3>${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}
+    <input class="inp" id="dlgIn" type="${type}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">
+    <div class="dlg-actions"><button type="button" class="btn secondary" data-r="0">Cancelar</button><button type="button" class="btn primary" data-r="1">${esc(ok)}</button></div>`,
+  (el) => {
+    const inp = el.querySelector('#dlgIn');
+    el.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => closeDialog(b.dataset.r === '1' ? inp.value.trim() || null : null)));
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') closeDialog(inp.value.trim() || null); });
+    setTimeout(() => inp.focus(), 50);
+  });
 }
 
 /** Segmentado / chips: marca el pulsado y llama a fn(valor). */
