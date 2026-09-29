@@ -28,9 +28,19 @@ export function openSettings(ctx, { saveSettings, setTheme, getTheme }) {
       ${s.mode === 'demo' ? `<button class="btn secondary" id="sResetDemo">Reiniciar datos de demo</button>` : `<button class="btn secondary" id="sToken">Cambiar token</button>`}
       <button class="btn secondary" id="sLogout" style="color:var(--amber)">Desconectar este dispositivo</button>
       <div class="hint">Desconectar borra el token y la caché de este dispositivo. Tus datos siguen en GitHub.</div>
+      <div class="meal"><span>Versión de la app</span><span class="muted" style="font-weight:700" id="appVer">…</span></div>
+      <button class="btn secondary sm" id="checkUpd" style="width:100%">Buscar actualización</button>
     </div>`, {
     bind: (sh) => {
       bindSeg(sh, '#sTheme', (v) => setTheme(v));
+      // versión: la del service worker activo (la que se está usando)
+      caches.keys().then((ks) => { const k = ks.find((x) => /^recomp-v/.test(x)); $('#appVer', sh).textContent = k ? k.replace('recomp-', '') : 'sin caché'; }).catch(() => {});
+      $('#checkUpd', sh).addEventListener('click', async () => {
+        const reg = await navigator.serviceWorker?.getRegistration();
+        if (!reg) return toast('No disponible en este navegador');
+        await reg.update();
+        toast(reg.installing || reg.waiting ? 'Hay versión nueva: pulsa «Actualizar» arriba' : 'Ya tienes la última versión');
+      });
       bindSeg(sh, '#sSex');
       $('#sSave', sh).addEventListener('click', () => {
         ctx.store.update(FILES.config, (c) => {
