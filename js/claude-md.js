@@ -31,7 +31,7 @@ siempre respetando estas reglas.
 |---|---|
 | \`config.json\` | perfil (\`profile\`), medidas del control (\`metrics\`), fórmulas, alertas, \`meal_slots\`, \`checkin_weekday\` (0 = domingo) |
 | \`plan.json\` | \`{ "versions": [ … ] }\` versiones completas del plan |
-| \`exercises.json\` | ejercicios propios \`{ "items": [ { "id": "mine:…", "name", "muscles": { "espalda": 1, "biceps": 0.5 } } ] }\` y preferencias por ejercicio \`"prefs": { "<id o n:nombre>": { "rest": 150, "note": "Banco en la 3" } }\` |
+| \`exercises.json\` | ejercicios propios \`{ "items": [ { "id": "mine:…", "name", "muscles": { "espalda": 1, "biceps": 0.5 } } ] }\` y preferencias por ejercicio \`"prefs": { "<id o n:nombre>": { "note": "Banco en la 3" } }\` |
 | \`foods.json\` | alimentos propios (\`custom\`), frecuencia de uso, «Mis alimentos» (\`favorites\`: alimento + cantidad) y comidas guardadas (\`saved_meals\`) |
 | \`days/AAAA-MM.json\` | un objeto por fecha con lo registrado ese día (ver abajo) |
 | \`fotos/AAAA-MM-DD/*.jpg\` | fotos del control (frente, perfiles, espalda) |

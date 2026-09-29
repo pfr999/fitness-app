@@ -75,3 +75,4 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 | 70 | 2026-09-29 | Control rápido (medidas, fotos, decisión) cuando la semana no tiene incidencias; el completo sigue igual | Menos fricción sin perder el ritual | Un solo control |
 | 71 | 2026-09-29 | Gasto con confianza visible y frase de por qué cambió; balance de 30 días «¿cumplo el plan?» / «¿funciona el plan?» | Un gasto que cambia sin explicación genera desconfianza | Solo el número |
 | 72 | 2026-09-29 | Se quita «pantalla encendida» en el entreno (revisa #68) | El usuario bloquea el móvil y lo guarda entre series: no aporta | Mantenerla |
+| 73 | 2026-09-29 | El descanso ya no arranca solo al marcar ✓: se lanza a mano (1 · 1,5 · 2 · 3 min) (revisa #68) | El usuario suele apuntar las series al acabar el ejercicio: el automático se disparaba sin sentido | Automático |

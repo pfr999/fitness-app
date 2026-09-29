@@ -106,8 +106,8 @@ Ver `docs/05-investigacion-apps.md` para el porqué.
 - **Comidas:** «Sueles poner en…», Mis alimentos (⭐, con cantidad), comidas guardadas, recientes,
   bandeja con «cómo queda el día», última cantidad y habituales, calculadora inversa, añadido rápido,
   menú ⋯ (copiar a hoy/mañana/otro día, guardar, renombrar, borrar), copiar el día de ayer.
-- **Entreno:** descanso automático, «Antes» por serie, objetivo en verde, RPE con
-  botones, W de calentamiento, récords por reps, nota fija y descanso por ejercicio, cambiar ejercicio
+- **Entreno:** descanso a mano (botones 1 · 1,5 · 2 · 3 min), «Antes» por serie, objetivo en verde, RPE con
+  botones, W de calentamiento, récords por reps, nota fija por ejercicio, cambiar ejercicio
   solo hoy o en la rutina.
 - **Progreso:** gasto con confianza y porqué, balance de 30 días, línea de objetivo, fotos lado a lado /
   deslizar / superponer, constancia de 26 semanas.

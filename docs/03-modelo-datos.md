@@ -59,7 +59,7 @@ recomp-data/
 ## exercises.json (ejercicios propios)
 ```jsonc
 { "items": [ { "id": "mine:k3x9", "name": "Remo invertido", "muscles": { "espalda": 1, "biceps": 0.5 } } ],
-  "prefs": { "press_banca": { "rest": 150, "note": "Banco en la muesca 3" } } }   // descanso (s) y nota fija por ejercicio
+  "prefs": { "press_banca": { "note": "Banco en la muesca 3" } } }   // nota fija por ejercicio
 ```
 El catálogo base (~100 ejercicios con alias y músculos: 1 = directo, 0,5 = indirecto) está en el
 código (`js/training/catalog.js`); aquí solo van los que crea el usuario. Un ejercicio de la rutina o

@@ -54,7 +54,6 @@ function setPref(ctx, key, patch, msg) {
     return doc;
   }, msg);
 }
-const DEFAULT_REST = 120, WARMUP_REST = 60;
 const RPES = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 const rpeColor = (v) => ['#5B9C7E', '#6FA56F', '#8EAA5C', '#B7A54B', '#D29A3E', '#DB8433', '#D96A2E', '#CF4F2C', '#B93A2B'][Math.round((v - 6) * 2)] || 'var(--ink-3)';
 const kgTxt = (kg) => fmt(kg, kg % 1 ? 1 : 0);
@@ -117,7 +116,7 @@ export function render(ctx) {
         <div class="rpes" hidden><span>RPE</span>${RPES.map((r) => `<button type="button" data-rv="${r}" style="background:${rpeColor(r)}">${fmt(r, r % 1 ? 1 : 0)}</button>`).join('')}</div>`;
     }).join('');
     const best = prev ? prev.sets.reduce((a, b) => (b.kg > a.kg ? b : a)) : null;
-    return `<div class="ex v2 ${isOpen ? 'open' : ''} ${done ? 'finished' : ''}" data-ex="${esc(g.key)}" data-name="${esc(g.it.name)}" data-rest="${pref.rest || ''}">
+    return `<div class="ex v2 ${isOpen ? 'open' : ''} ${done ? 'finished' : ''}" data-ex="${esc(g.key)}" data-name="${esc(g.it.name)}">
       <div class="ex-hd"><button class="ex-h" data-toggle="${esc(date)}|${esc(g.key)}"><span class="ex-n ${done ? 'done' : ''}">${done ? '✓' : idx + 1}</span>
         <span class="ex-t"><b>${esc(g.it.name)}</b><span>${g.extra ? 'Extra' : `${esc(planned)} × ${esc((g.it.reps || []).join('–'))}${g.it.rpe ? ` · RPE ${esc(g.it.rpe)}` : ''}`}${g.it.swappedFrom ? ` · en vez de ${esc(g.it.swappedFrom)}` : ''}${best && !isOpen ? ` · última ${esc(fmtSet(best))}` : ''}</span></span>
         <span class="cnt">${doneN}/${planned}</span></button>
@@ -141,6 +140,7 @@ export function render(ctx) {
   return `${days.length ? `<div class="daytabs" id="trainDays">${days.map((d) => `<button data-v="${esc(d.name)}" class="${d.name === rd.name ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>` : ''}
     <div class="card">
       <div class="ch"><h2>${esc(rd.name)}</h2><span class="aux" id="sessCount">${nWork} de ${nPlan} series</span></div>
+      ${isToday ? '<div class="rest-pick"><span>⏱ Descanso</span>' + [60, 90, 120, 180].map((x) => `<button type="button" data-rest="${x}">${x < 120 ? `${x} s` : `${x / 60} min`}</button>`).join('') + '</div>' : ''}
       <div class="muted small" style="margin:-4px 0 10px">«Antes» es tu última sesión (tócalo para copiarlo). <b>✓</b> apunta lo que ves; si hiciste otra cosa, escríbelo. Toca el número para marcar una serie de calentamiento (W).</div>
       ${all.map(block).join('')}
       <button class="btn secondary sm" id="addExtra" style="width:100%;margin-top:10px">${icon.plus} Ejercicio extra</button>
@@ -169,6 +169,7 @@ export function bind(root, ctx) {
     ctx.render();
   }));
   $$('[data-assign]', root).forEach((b) => b.addEventListener('click', () => assignSheet(ctx, b.dataset.assign, () => ctx.render())));
+  $$('[data-rest]', root).forEach((b) => b.addEventListener('click', () => startRest(+b.dataset.rest)));
   $$('[data-exmenu]', root).forEach((b) => b.addEventListener('click', () => exerciseMenu(ctx, date, ctx.state._workGroups[+b.dataset.exmenu], rdName())));
   const recs = new Map();
   const recsFor = (key) => { if (!recs.has(key)) recs.set(key, recordsByReps(ctx, date, key, exs)); return recs.get(key); };
@@ -222,7 +223,6 @@ export function bind(root, ctx) {
       paintCounts(group);
       if (complete && fromCheck && !wasOk) {
         try { navigator.vibrate?.(15); } catch { /* */ }
-        startRest(warm ? WARMUP_REST : +group.dataset.rest || DEFAULT_REST, group.dataset.name);
         // récord para ese número de repeticiones
         const r = recsFor(key);
         if (!warm && r[reps] && kg > r[reps].kg) {
@@ -310,7 +310,6 @@ function exerciseMenu(ctx, date, g, rdName) {
   openSheet(`<h3>${esc(g.it.name)}</h3>${g.it.swappedFrom ? `<div class="muted">Hoy en vez de ${esc(g.it.swappedFrom)}</div>` : ''}
     ${datalist(ctx)}
     <div class="stack" style="margin-top:12px">
-      <div class="field"><label>Descanso entre series</label><div class="chipset sm" id="rstSeg">${[60, 90, 120, 150, 180, 240].map((s) => `<button type="button" data-v="${s}" class="${(pref.rest || DEFAULT_REST) === s ? 'on' : ''}">${s < 120 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`}</button>`).join('')}</div></div>
       <div class="field"><label for="exNote">Nota fija (sale siempre en este ejercicio)</label><textarea class="inp" id="exNote" style="min-height:64px" placeholder="p. ej. Banco en la muesca 3 · agarre a palmo y medio">${esc(pref.note || '')}</textarea></div>
       <button class="btn secondary" id="exNoteSave">Guardar nota</button>
       ${g.extra ? '' : `<div class="grp">Cambiar por otro ejercicio</div>
@@ -321,7 +320,6 @@ function exerciseMenu(ctx, date, g, rdName) {
       <button class="btn secondary" id="exHist">Historial y récords</button>
     </div>`, {
     bind: (sh) => {
-      bindSeg(sh, '#rstSeg', (v) => { setPref(ctx, g.key, { rest: +v === DEFAULT_REST ? null : +v }, `Descanso ${g.it.name}: ${v} s`); toast(`Descanso: ${v} s`); ctx.render(); });
       $('#exNoteSave', sh).addEventListener('click', () => { setPref(ctx, g.key, { note: $('#exNote', sh).value.trim() || null }, `Nota de ${g.it.name}`); closeSheet(); toast('Nota guardada'); ctx.render(); });
       const newName = () => { const n = $('#swName', sh).value.trim(); if (!n) toast('Escribe el ejercicio nuevo'); return n; };
       $('#swToday', sh)?.addEventListener('click', () => {
