@@ -187,8 +187,11 @@ const isPlanned = (ctx, date, slot) => mealPlan(planFor(ctx.store.get(FILES.plan
 const dropExtra = (ctx, date, slot) => { const l = ctx.state.extraMeals?.[date]; if (l) ctx.state.extraMeals[date] = l.filter((x) => x !== slot); };
 
 function removeMeal(ctx, date, slot) {
-  const m = mealOf(ctx.store.day(date), slot);
-  if (m.items.length && !confirm(`¿Quitar «${slot}» y ${m.items.length === 1 ? 'su alimento' : `sus ${m.items.length} alimentos`} de este día?`)) return;
+  const day = ctx.store.day(date);
+  const m = mealOf(day, slot);
+  const what = m.items.length ? ` y ${m.items.length === 1 ? 'su alimento' : `sus ${m.items.length} alimentos`}` : '';
+  if (!confirm(`¿Seguro que quieres borrar «${slot}»${what} de este día?`)) return;
+  const before = { meals: structuredClone(day.meals || null), hidden: structuredClone(day.hidden_meals || null), order: structuredClone(day.meal_order || null) };
   const planned = isPlanned(ctx, date, slot);
   if (m.items.length || planned) {
     ctx.store.updateDay(date, (d) => {
@@ -197,8 +200,17 @@ function removeMeal(ctx, date, slot) {
     }, `${fmtShort(date)}: quita ${slot}`);
   }
   dropExtra(ctx, date, slot);
-  toast(`${slot} quitada`);
   ctx.render();
+  toast(`«${slot}» borrada`, { action: { label: 'Deshacer', fn: () => {
+    ctx.store.updateDay(date, (d) => {
+      if (before.meals) d.meals = before.meals; else delete d.meals;
+      if (before.hidden) d.hidden_meals = before.hidden; else delete d.hidden_meals;
+      if (before.order) d.meal_order = before.order; else delete d.meal_order;
+    }, `${fmtShort(date)}: recupera ${slot}`);
+    if (!m.items.length && !planned) ((ctx.state.extraMeals ||= {})[date] ||= []).push(slot);
+    toast(`«${slot}» recuperada`);
+    ctx.render();
+  } } });
 }
 
 function renameMealSheet(ctx, date, slot) {
@@ -396,8 +408,13 @@ function itemSheet(ctx, date, slot, i) {
         closeSheet(); ctx.render();
       });
       $('#iDel', sh).addEventListener('click', () => {
+        const removed = structuredClone(it);
         ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); m.items.splice(i, 1); setMeal(d, slot, m.items); }, `${slot} ${fmtShort(date)}: −${it.name}`);
-        toast('Quitado'); closeSheet(); ctx.render();
+        closeSheet(); ctx.render();
+        toast(`${it.name} quitado`, { action: { label: 'Deshacer', fn: () => {
+          ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); m.items.splice(Math.min(i, m.items.length), 0, removed); setMeal(d, slot, m.items); }, `${slot} ${fmtShort(date)}: +${it.name} (recuperado)`);
+          ctx.render();
+        } } });
       });
     },
   });

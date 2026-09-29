@@ -438,6 +438,7 @@ function suppSheet(ctx, idx, kind = 'supplement') {
         if (savePlan(ctx, (p) => { if (isNew) p.supplements.push(next); else p.supplements[idx] = next; }, $('#why', sh).value)) { ctx.state.planTab = 'supl'; closeSheet(); ctx.render(); }
       });
       $('#sDel', sh)?.addEventListener('click', () => {
+        if (!confirm(`¿Seguro que dejas de tomar «${s.name}»? Se crea una versión nueva del plan (las anteriores lo conservan).`)) return;
         if (savePlan(ctx, (p) => { p.supplements.splice(idx, 1); }, $('#why', sh).value)) { closeSheet(); ctx.render(); }
       });
     },
