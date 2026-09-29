@@ -6,6 +6,7 @@ import { FILES, planFor, sumItems, kcalTarget, dietStatus } from '../model.js';
 import { dayReviewSheet } from './semana.js';
 import { isDue } from './control.js';
 import * as meals from './meals.js';
+import { mealPlan } from './meals.js';
 import * as workout from './workout.js';
 
 const SUBS = [['dia', 'Día'], ['comidas', 'Comidas'], ['entreno', 'Entreno']];
@@ -52,7 +53,8 @@ function renderDay(ctx) {
   const nTaken = [...taken].filter((n) => supp.some((s) => s.name === n)).length;
   // lista del día: cada línea con su estado y a dónde lleva
   const meals = (day.meals || []).filter((m) => m.items?.length);
-  const slots = (v?.diet?.meals || []).length || (ctx.store.get(FILES.config)?.meal_slots || []).length;
+  const mp = mealPlan(v);
+  const slots = mp.mode === 'fixed' ? mp.list.length : 0;
   const kcalNow = meals.length ? sumItems(meals.flatMap((m) => m.items)).kcal : 0;
   const sets = (day.session?.sets || []).filter((s) => !s.warmup).length;
   const ds = dietStatus(day);

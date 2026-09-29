@@ -45,8 +45,9 @@ recomp-data/
     },
     "diet": {
       "kcal": { "train": 3150, "rest": 2850 }, "protein_g": 260, "carbs_g": 330, "fat_g": 85,
-      "meals": [ { "slot": "Desayuno", "share": 0.22, "portions": { "P": 3, "C": 3, "G": 2 } } ],
-      "rules": ["texto libre"]                   // share: parte del día; si falta, se deriva de las porciones
+      "meals_mode": "fixed",                     // fixed: lista fija · free: se añaden cada día
+      "meals": [ { "slot": "Comida 1", "target": { "p": 50, "c": 80, "f": 20 } }, { "slot": "Intra-entreno", "portions": { "C": 1 } } ],
+      "rules": ["texto libre"]                   // objetivo por comida opcional; nunca se reparte el total del día
     },
     "routine": { "days": [ { "name": "Día 1", "items": [
       { "name": "Peso muerto rumano", "sets": 4, "reps": [7, 9], "rpe": 9, "note": "" } ] } ] },
@@ -70,7 +71,8 @@ de una serie se reconoce por `ex` (id) o, si no lo tiene, por su nombre o alias.
     "wellness": { "energy": 4, "fatigue": 2 },          // 1–5, opcionales
     "meals": [ { "slot": "Desayuno", "items": [
         { "food": "off:8480000038524", "name": "Patata cocida en conserva", "brand": "Hacendado",
-          "g": 120, "per100": { "kcal": 68, "p": 1.8, "c": 14.2, "f": 0.1 } } ] } ],
+          "g": 120, "per100": { "kcal": 68, "p": 1.8, "c": 14.2, "f": 0.1 },
+          "unit": { "name": "pastilla", "g": 5.5, "n": 4 } } ] } ],   // unit opcional: se apuntó en unidades
     "trained": true,                                    // true entreno · false descanso · ausente = sin marcar
     "meals_complete": null,                             // «día cerrado» desde Comidas (= diet logged)
     "diet": { "status": "logged|plan|over|under|unknown", "kcal_delta": 700 },  // validación del día (Hoy o revisión semanal)
@@ -95,8 +97,9 @@ de una serie se reconoce por `ex` (id) o, si no lo tiene, por su nombre o alias.
 
 ## foods.json (alimentos propios)
 ```jsonc
-{ "custom": [ { "id": "mine:1", "name": "", "brand": "", "store": "", "per100": { "kcal": 0, "p": 0, "c": 0, "f": 0 },
-                "source": "manual|off", "ean": "" } ],
+{ "custom": [ { "id": "mine:1", "name": "", "brand": "", "stores": "", "per100": { "kcal": 0, "p": 0, "c": 0, "f": 0 },
+                "units": [ { "name": "pastilla", "g": 5.5 } ], "qty": "200 pastillas",
+                "source": "manual|off|copia:<id original>", "ean": "" } ],
   "recipes": [ { "id": "rec:1", "name": "Mi desayuno", "items": [ { "food": "mine:1", "g": 120 } ] } ],
   "frequent": { "off:8480000038524": 9 } }         // contador de uso para ordenar el buscador
 ```

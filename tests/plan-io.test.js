@@ -45,3 +45,17 @@ test('errores claros y avisos', () => {
   const m = parsePlan({ rutina: { dias: [{ nombre: 'D', ejercicios: [{ nombre: 'Remo anillas', series: 3, reps: [8, 12], musculos: { espalda: 1, biceps: 0.5, raro: 3 } }] }] } });
   assert.deepEqual(m.exercises, [{ name: 'Remo anillas', muscles: { espalda: 1, biceps: 0.5 } }]);
 });
+
+test('comidas: modo fijo con objetivo por comida y modo libre', () => {
+  const v = structuredClone(emptyPlan().versions[0]);
+  v.diet.meals_mode = 'fixed';
+  v.diet.meals = [{ slot: 'Comida 1', target: { p: 50, c: 80, f: 20 } }, { slot: 'Intra-entreno', portions: { C: 1 } }, { slot: 'Comida 3' }];
+  const w = structuredClone(emptyPlan().versions[0]);
+  parsePlan(JSON.parse(JSON.stringify(exportPlan(v)))).apply(w);
+  assert.deepEqual(w.diet.meals, v.diet.meals);
+  assert.equal(w.diet.meals_mode, 'fixed');
+  const free = parsePlan({ dieta: { kcal_entreno: 2600, kcal_descanso: 2300, proteina_g: 190, carbohidratos_g: 270, grasas_g: 70, modo_comidas: 'libres', comidas: [{ nombre: 'X' }] } });
+  free.apply(w);
+  assert.equal(w.diet.meals_mode, 'free');
+  assert.deepEqual(w.diet.meals, [], 'en modo libre no hay lista fija');
+});

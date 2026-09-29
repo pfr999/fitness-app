@@ -1,30 +1,46 @@
 // Hoy → Comidas: registro de alimentos por gramos, totales por comida y día frente al objetivo,
 // alimentos propios, escáner de código de barras y botón «Día completo».
 
-import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon } from '../ui/ui.js';
+import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon, bindSeg } from '../ui/ui.js';
 import { ring } from '../ui/charts.js';
 import { addDays, fmtShort } from '../dates.js';
 import { FILES, planFor, kcalTarget, sumItems } from '../model.js';
-import { loadFoods, isLoaded, findFoods, frequentFoods, byEan, lookupBarcodeOnline, searchOnline, macrosFor, packageGrams } from '../foods/db.js';
+import { loadFoods, isLoaded, findFoods, frequentFoods, byEan, byId, lookupBarcodeOnline, searchOnline, macrosFor, packageGrams } from '../foods/db.js';
 import { highlightTerms, norm } from '../foods/search.js';
 import { scannerSupported, startScanner } from '../foods/scanner.js';
 
-// ---------------------------------------------------------------- objetivos
-function slotsFor(ctx, v) {
-  const fromPlan = (v?.diet?.meals || []).map((m) => m.slot).filter(Boolean);
-  return fromPlan.length ? fromPlan : ctx.store.get(FILES.config)?.meal_slots || ['Desayuno', 'Comida', 'Merienda', 'Cena'];
+// ---------------------------------------------------------------- comidas del plan
+/**
+ * Comidas del plan. Modo «fixed»: lista fija (por defecto Comida 1–3), cada una con objetivo opcional
+ * (gramos de macros o porciones). Modo «free»: no hay lista; cada día se añaden las que se hagan.
+ * Nunca se reparte el objetivo del día entre comidas: lo que cuenta es el total del día.
+ */
+export function mealPlan(v) {
+  const d = v?.diet || {};
+  const mode = d.meals_mode === 'free' ? 'free' : 'fixed';
+  const list = (d.meals || []).filter((m) => m.slot);
+  return { mode, list: mode === 'fixed' && !list.length ? ['Comida 1', 'Comida 2', 'Comida 3'].map((slot) => ({ slot })) : list };
 }
 
-/** Parte del día que corresponde a cada comida: por porciones del plan, o a partes iguales. */
-function shares(v, slots) {
-  const meals = v?.diet?.meals || [];
-  const w = slots.map((s) => {
-    const m = meals.find((x) => x.slot === s);
-    return m ? Object.values(m.portions || {}).reduce((a, b) => a + (+b || 0), 0) : 0;
-  });
-  const tot = w.reduce((a, b) => a + b, 0);
-  return Object.fromEntries(slots.map((s, i) => [s, tot ? w[i] / tot : 1 / slots.length]));
+/** Comidas que se muestran un día: las fijas del plan + las que tengan algo apuntado + las añadidas hoy. */
+export function slotsFor(ctx, v, date) {
+  const { mode, list } = mealPlan(v);
+  const day = ctx.store.day(date);
+  const planned = mode === 'fixed' ? list.map((m) => m.slot) : [];
+  const logged = (day.meals || []).filter((m) => m.items?.length).map((m) => m.slot);
+  return [...new Set([...planned, ...logged, ...(ctx.state.extraMeals?.[date] || [])])];
 }
+
+/** Objetivo propio de una comida (si el plan se lo pone). */
+function mealTarget(v, slot) {
+  const m = (v?.diet?.meals || []).find((x) => x.slot === slot);
+  if (m?.target && ['p', 'c', 'f'].some((k) => m.target[k] != null)) {
+    const t = { p: +m.target.p || 0, c: +m.target.c || 0, f: +m.target.f || 0 };
+    return { ...t, kcal: 4 * t.p + 4 * t.c + 9 * t.f };
+  }
+  return null;
+}
+const mealPortions = (v, slot) => (v?.diet?.meals || []).find((x) => x.slot === slot)?.portions || null;
 
 function targets(v, trained) {
   const kcal = kcalTarget(v, trained);
@@ -43,8 +59,8 @@ export function render(ctx) {
   if (!v) return '';
   const day = ctx.store.day(date);
   const t = targets(v, day.trained);
-  const slots = slotsFor(ctx, v);
-  const sh = shares(v, slots);
+  const slots = slotsFor(ctx, v, date);
+  const { mode } = mealPlan(v);
   const all = sumItems((day.meals || []).flatMap((m) => m.items));
   const complete = day.meals_complete === true;
   const label = day.trained === true ? 'Día de entreno' : day.trained === false ? 'Día de descanso' : 'Entreno sin marcar';
@@ -53,12 +69,16 @@ export function render(ctx) {
   const cards = slots.map((slot) => {
     const m = mealOf(day, slot);
     const s = sumItems(m.items);
-    const k = sh[slot];
+    const tg = mealTarget(v, slot);
+    const por = mealPortions(v, slot);
     const y = mealOf(ctx.store.day(addDays(date, -1)), slot);
+    const porChips = por && Object.keys(por).length ? `<div class="por" style="justify-content:flex-start;margin-bottom:6px">${Object.entries(por).filter(([, n]) => n).map(([k2, n]) => `<span class="${esc(k2)}">${esc(n)}${esc(k2)}</span>`).join('')}</div>` : '';
     return `<div class="card mc">
-      <div class="ch"><h2>${esc(slot)}</h2><span class="aux num">${fmtK(s.kcal)} / ${fmtK(t.kcal * k)} kcal</span></div>
-      ${m.items.length ? `<div class="mc-sub"><span>P <b>${fmtK(s.p)}</b>/${fmtK(t.p * k)}</span><span>C <b>${fmtK(s.c)}</b>/${fmtK(t.c * k)}</span><span>G <b>${fmtK(s.f)}</b>/${fmtK(t.f * k)} g</span></div>` : ''}
-      ${m.items.map((it, i) => { const x = macrosFor(it.per100, it.g); return `<button class="fi" data-item="${esc(slot)}|${i}" style="width:100%;border-left:0;border-right:0;border-bottom:0;background:none;text-align:left"><div class="ft"><b>${esc(it.name)}${it.brand ? ` · ${esc(it.brand)}` : ''}</b><span>${fmtK(it.g)} g · P ${fmtK(x.p)} · C ${fmtK(x.c)} · G ${fmtK(x.f)}</span></div><div class="fk num">${fmtK(x.kcal)}<small>kcal</small></div></button>`; }).join('')}
+      <div class="ch"><h2>${esc(slot)}</h2><span class="aux num">${fmtK(s.kcal)}${tg ? ` / ${fmtK(tg.kcal)}` : ''} kcal</span></div>
+      ${tg ? `<div class="mc-sub"><span>P <b>${fmtK(s.p)}</b>/${fmtK(tg.p)}</span><span>C <b>${fmtK(s.c)}</b>/${fmtK(tg.c)}</span><span>G <b>${fmtK(s.f)}</b>/${fmtK(tg.f)} g</span></div>`
+        : m.items.length ? `<div class="mc-sub"><span>P <b>${fmtK(s.p)}</b></span><span>C <b>${fmtK(s.c)}</b></span><span>G <b>${fmtK(s.f)}</b> g</span></div>` : ''}
+      ${porChips}
+      ${m.items.map((it, i) => { const x = macrosFor(it.per100, it.g); const q = it.unit ? `${fmt(it.unit.n, it.unit.n % 1 ? 1 : 0)} ${esc(unitLabel(it.unit.name, it.unit.n))} · ${fmtK(it.g)} g` : `${fmtK(it.g)} g`; return `<button class="fi" data-item="${esc(slot)}|${i}" style="width:100%;border-left:0;border-right:0;border-bottom:0;background:none;text-align:left"><div class="ft"><b>${esc(it.name)}${it.brand ? ` · ${esc(it.brand)}` : ''}</b><span>${q} · P ${fmtK(x.p)} · C ${fmtK(x.c)} · G ${fmtK(x.f)}</span></div><div class="fk num">${fmtK(x.kcal)}<small>kcal</small></div></button>`; }).join('')}
       <div class="mc-actions"><button class="btn primary sm" data-add="${esc(slot)}">${icon.plus} Añadir</button>${!m.items.length && y.items.length ? `<button class="btn secondary sm" data-copy="${esc(slot)}">Copiar de ayer</button>` : ''}</div>
     </div>`;
   }).join('');
@@ -72,6 +92,8 @@ export function render(ctx) {
       ${day.trained == null ? `<div class="hint">Marca en «Día» si entrenas hoy: cambia el objetivo (entreno ${fmtK(v.diet.kcal.train)} · descanso ${fmtK(v.diet.kcal.rest)}).</div>` : ''}
     </div>
     ${cards}
+    ${!slots.length ? `<div class="card empty"><b>Sin comidas todavía</b>Añade la primera del día.</div>` : ''}
+    <button class="btn secondary" id="addMeal" style="margin-bottom:12px">${icon.plus} ${mode === 'free' || !slots.length ? 'Añadir comida' : 'Otra comida'}</button>
     <button class="btn ${complete ? 'secondary' : 'primary'}" id="dayComplete" style="margin-bottom:6px">${complete ? `${icon.check} Día completo · toca para desmarcar` : 'Marcar día completo ✓'}</button>
     <div class="hint" style="text-align:center;margin-bottom:12px">${complete ? 'Lo apuntado cuenta como todo lo que comiste hoy.' : 'Cuando hayas apuntado todo lo de hoy.'}</div>
     <div class="attr" style="text-align:center">Datos: CIQUAL (ANSES) · Open Food Facts (ODbL)</div>`;
@@ -81,6 +103,7 @@ export function bind(root, ctx) {
   const date = ctx.state.date;
   if (!isLoaded()) loadFoods().catch(() => {});
   $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => addSheet(ctx, date, b.dataset.add)));
+  $('#addMeal', root)?.addEventListener('click', () => newMealSheet(ctx, date));
   $$('[data-copy]', root).forEach((b) => b.addEventListener('click', () => {
     const slot = b.dataset.copy;
     const y = mealOf(ctx.store.day(addDays(date, -1)), slot);
@@ -111,9 +134,10 @@ function setMeal(d, slot, items) {
   if (!d.meals.length) delete d.meals;
 }
 
-function addItem(ctx, date, slot, food, g) {
-  const item = { food: food.id, name: food.name, ...(food.brand ? { brand: food.brand } : {}), g, per100: { ...food.per100 } };
-  ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); setMeal(d, slot, [...m.items, item]); }, `${slot} ${fmtShort(date)}: +${food.name} ${fmtK(g)} g`);
+function addItem(ctx, date, slot, food, g, unit = null) {
+  const item = { food: food.id, name: food.name, ...(food.brand ? { brand: food.brand } : {}), g, ...(unit ? { unit } : {}), per100: { ...food.per100 } };
+  const q = unit ? `${fmt(unit.n, unit.n % 1 ? 1 : 0)} ${unitLabel(unit.name, unit.n)}` : `${fmtK(g)} g`;
+  ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); setMeal(d, slot, [...m.items, item]); }, `${slot} ${fmtShort(date)}: +${food.name} ${q}`);
   ctx.store.update(FILES.foods, (doc) => {
     doc = doc && typeof doc === 'object' ? doc : {};
     doc.custom ||= []; doc.recipes ||= []; doc.frequent ||= {};
@@ -125,6 +149,52 @@ function addItem(ctx, date, slot, food, g) {
     }
     return doc;
   }, 'Alimentos frecuentes');
+}
+
+/** «pastilla» → «pastillas» para n ≠ 1 (plural simple en español). */
+export function unitLabel(name, n) {
+  if (n === 1 || !name) return name || '';
+  // «rebanada de pan» → «rebanadas de pan»: se pluraliza la primera palabra
+  const sp = name.indexOf(' ');
+  if (sp > 0) return unitLabel(name.slice(0, sp), n) + name.slice(sp);
+  if (/(s|x)$/i.test(name)) return name;                       // «cápsulas» ya en plural
+  if (/[aeiouáéíóú]$/i.test(name)) return `${name}s`;           // pastilla → pastillas
+  if (/ón$/i.test(name)) return name.replace(/ón$/i, 'ones');   // ración → raciones
+  if (/z$/i.test(name)) return name.replace(/z$/i, 'ces');      // nuez → nueces
+  if (/[lrndjy]$/i.test(name)) return `${name}es`;              // pan → panes
+  return `${name}s`;                                            // scoop → scoops
+}
+
+/** Unidades con las que se puede medir un alimento: las suyas (pastilla, ración…) y el envase. */
+function unitsOf(food) {
+  const out = [...(food.units || [])].filter((u) => u.name && u.g > 0);
+  const pkg = packageGrams(food.qty);
+  if (pkg && !out.some((u) => u.g === pkg)) out.push({ name: 'envase', g: pkg });
+  return out;
+}
+
+// ---------------------------------------------------------------- comida nueva (del día)
+function newMealSheet(ctx, date) {
+  const v = planFor(ctx.store.get(FILES.plan), date);
+  const shown = new Set(slotsFor(ctx, v, date));
+  let n = 1; while (shown.has(`Comida ${n}`)) n++;
+  const sugg = [...new Set([`Comida ${n}`, ...mealPlan(v).list.map((m) => m.slot), 'Desayuno', 'Almuerzo', 'Comida', 'Merienda', 'Cena', 'Pre-entreno', 'Intra-entreno', 'Post-entreno', 'Snack'])].filter((x) => !shown.has(x));
+  openSheet(`<h3>Añadir comida</h3>
+    <div class="chipset" id="mSug" style="margin-top:12px">${sugg.slice(0, 10).map((x) => `<button type="button" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <div class="field" style="margin-top:12px"><label for="mName">O escribe el nombre</label><input class="inp" id="mName" placeholder="p. ej. Intra-entreno"></div>
+    <div class="sheet-actions"><button class="btn primary" id="mAdd" style="margin-top:12px">Añadir y buscar alimento</button></div>`, {
+    bind: (sh) => {
+      const go = (name) => {
+        name = String(name || '').trim();
+        if (!name) return toast('Elige o escribe un nombre');
+        ((ctx.state.extraMeals ||= {})[date] ||= []).includes(name) || ctx.state.extraMeals[date].push(name);
+        ctx.render();
+        addSheet(ctx, date, name);
+      };
+      $$('#mSug button', sh).forEach((b) => b.addEventListener('click', () => go(b.dataset.v)));
+      $('#mAdd', sh).addEventListener('click', () => go($('#mName', sh).value));
+    },
+  });
 }
 
 // ---------------------------------------------------------------- añadir: buscar
@@ -178,29 +248,55 @@ function addSheet(ctx, date, slot) {
 }
 
 // ---------------------------------------------------------------- cantidad
-function gramsSheet(ctx, date, slot, food, { initial = 100, onSave = null } = {}) {
-  const pkg = packageGrams(food.qty);
-  const quick = [50, 100, 150, 200];
+function gramsSheet(ctx, date, slot, food, { initial = 100, initialUnit = null, onSave = null } = {}) {
+  const units = unitsOf(food);
+  // unidad por defecto: la del registro que se edita, o la primera propia del alimento (p. ej. pastilla)
+  let unit = initialUnit ? units.find((u) => u.name === initialUnit.name) || { name: initialUnit.name, g: initialUnit.g } : (food.units?.[0] || null);
+  let qty = initialUnit ? initialUnit.n : unit ? 1 : initial;
+  const quick = unit ? [1, 2, 3, 4] : [50, 100, 150, 200];
+  const unitBtns = `<div class="seg" id="uSeg" style="margin:10px 0 0">${[['g', 'gramos'], ...units.map((u) => [u.name, `${u.name} · ${fmt(u.g, u.g % 1 ? 1 : 0)} g`])].map(([k, l]) => `<button type="button" data-v="${esc(k)}" class="${(unit ? unit.name : 'g') === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>`;
   openSheet(`<h3>${esc(food.name)}</h3><div class="muted">${[food.brand, food.stores || (food.src === 'gen' ? 'Genérico (CIQUAL)' : ''), food.qty].filter(Boolean).map(esc).join(' · ')} · ${fmtK(food.per100.kcal)} kcal/100 g</div>
-    <div class="field" style="margin-top:14px"><label for="fg">Cantidad</label><div class="unit-wrap"><input class="inp" id="fg" inputmode="decimal" value="${fmtK(initial)}" autofocus><span class="u">g</span></div></div>
-    <div class="gpick">${quick.map((v) => `<button type="button" data-g="${v}">${v} g</button>`).join('')}</div>
-    ${pkg ? `<button type="button" class="btn secondary sm" data-g="${pkg}" style="width:100%;margin:-4px 0 12px">1 envase · ${fmtK(pkg)} g</button>` : ''}
+    ${units.length ? unitBtns : ''}
+    <div class="field" style="margin-top:12px"><label for="fg" id="fgL">Cantidad</label><div class="unit-wrap"><input class="inp" id="fg" inputmode="decimal" value="${fmt(qty, qty % 1 ? 1 : 0)}" autofocus><span class="u" id="fgU"></span></div></div>
+    <div class="gpick" id="gpick"></div>
     <div class="mtot" id="mt"></div>
-    <button class="btn primary" id="fAdd">${onSave ? 'Guardar' : `Añadir a ${esc(slot)}`}</button>`, {
+    <div class="sheet-actions"><button class="btn primary" id="fAdd">${onSave ? 'Guardar' : `Añadir a ${esc(slot)}`}</button></div>
+    <button class="link" id="fEdit" type="button" style="width:100%;text-align:center;margin-top:6px">Editar datos o unidades de este alimento</button>`, {
     bind: (sh) => {
-      const upd = () => {
-        const x = macrosFor(food.per100, num($('#fg', sh).value) || 0);
-        $('#mt', sh).innerHTML = `<div><b class="num">${fmtK(x.kcal)}</b><span>kcal</span></div><div><b class="num">${fmt(x.p)}</b><span>prot. g</span></div><div><b class="num">${fmt(x.c)}</b><span>carb. g</span></div><div><b class="num">${fmt(x.f)}</b><span>grasa g</span></div>`;
+      const grams = () => (num($('#fg', sh).value) || 0) * (unit ? unit.g : 1);
+      const paintQuick = () => {
+        const q = unit ? [1, 2, 3, 4] : quick;
+        $('#gpick', sh).innerHTML = q.map((v) => `<button type="button" data-g="${v}">${v}${unit ? '' : ' g'}</button>`).join('');
+        $$('[data-g]', sh).forEach((b) => b.addEventListener('click', () => { $('#fg', sh).value = b.dataset.g; upd(); }));
+        $('#fgU', sh).textContent = unit ? unitLabel(unit.name, num($('#fg', sh).value) || 0) : 'g';
+        $('#fgL', sh).textContent = unit ? `Cantidad (${unitLabel(unit.name, 2)})` : 'Cantidad';
       };
+      const upd = () => {
+        const g = grams();
+        const x = macrosFor(food.per100, g);
+        $('#fgU', sh).textContent = unit ? unitLabel(unit.name, num($('#fg', sh).value) || 0) : 'g';
+        $('#mt', sh).innerHTML = `<div><b class="num">${fmtK(x.kcal)}</b><span>kcal</span></div><div><b class="num">${fmt(x.p)}</b><span>prot. g</span></div><div><b class="num">${fmt(x.c)}</b><span>carb. g</span></div><div><b class="num">${fmt(x.f)}</b><span>grasa g</span></div>${unit ? `<div style="grid-column:1/-1;font-size:11.5px;color:var(--ink-3);font-weight:700">= ${fmt(g, g % 1 ? 1 : 0)} g</div>` : ''}`;
+      };
+      $$('#uSeg button', sh).forEach((b) => b.addEventListener('click', () => {
+        const g = grams();
+        $$('#uSeg button', sh).forEach((x) => x.classList.toggle('on', x === b));
+        unit = b.dataset.v === 'g' ? null : units.find((u) => u.name === b.dataset.v);
+        // convertir lo escrito a la nueva unidad
+        const v = unit ? g / unit.g : g;
+        $('#fg', sh).value = fmt(Math.round(v * 10) / 10, (Math.round(v * 10) / 10) % 1 ? 1 : 0);
+        paintQuick(); upd();
+      }));
       $('#fg', sh).addEventListener('input', upd);
-      $$('[data-g]', sh).forEach((b) => b.addEventListener('click', () => { $('#fg', sh).value = b.dataset.g; upd(); }));
-      upd();
       $('#fg', sh).addEventListener('focus', (e) => e.target.select());
+      paintQuick(); upd();
+      $('#fEdit', sh)?.addEventListener('click', () => foodEditor(ctx, date, slot, food));
       $('#fAdd', sh).addEventListener('click', () => {
-        const g = num($('#fg', sh).value);
-        if (!g || g <= 0 || g > 5000) return toast('Cantidad no válida');
-        if (onSave) onSave(g);
-        else { addItem(ctx, date, slot, food, g); toast(`${food.name} · ${fmtK(g)} g`); }
+        const n = num($('#fg', sh).value);
+        const g = grams();
+        if (!n || n <= 0 || g > 5000) return toast('Cantidad no válida');
+        const u = unit ? { name: unit.name, g: unit.g, n } : null;
+        if (onSave) onSave(g, u);
+        else { addItem(ctx, date, slot, food, g, u); toast(`${food.name} · ${u ? `${fmt(n, n % 1 ? 1 : 0)} ${unitLabel(u.name, n)}` : `${fmtK(g)} g`}`); }
         closeSheet();
         ctx.render();
       });
@@ -213,9 +309,10 @@ function itemSheet(ctx, date, slot, i) {
   const day = ctx.store.day(date);
   const it = mealOf(day, slot).items[i];
   if (!it) return;
-  const slots = slotsFor(ctx, planFor(ctx.store.get(FILES.plan), date));
-  const food = { id: it.food, name: it.name, brand: it.brand, per100: it.per100 };
-  openSheet(`<h3>${esc(it.name)}</h3><div class="muted">${esc(slot)} · ${fmtK(it.g)} g</div>
+  const slots = slotsFor(ctx, planFor(ctx.store.get(FILES.plan), date), date);
+  const known = byId(it.food, ctx.store.get(FILES.foods));
+  const food = { id: it.food, name: it.name, brand: it.brand, per100: it.per100, units: known?.units || (it.unit ? [{ name: it.unit.name, g: it.unit.g }] : []), qty: known?.qty };
+  openSheet(`<h3>${esc(it.name)}</h3><div class="muted">${esc(slot)} · ${it.unit ? `${fmt(it.unit.n, it.unit.n % 1 ? 1 : 0)} ${esc(unitLabel(it.unit.name, it.unit.n))} · ` : ''}${fmtK(it.g)} g</div>
     <div class="stack" style="margin-top:14px">
       <button class="btn secondary" id="iG">${icon.edit} Cambiar cantidad</button>
       <div class="field"><label for="iMove">Mover a</label><select class="inp" id="iMove">${slots.map((s) => `<option ${s === slot ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
@@ -224,7 +321,8 @@ function itemSheet(ctx, date, slot, i) {
     bind: (sh) => {
       $('#iG', sh).addEventListener('click', () => gramsSheet(ctx, date, slot, food, {
         initial: it.g,
-        onSave: (g) => ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); m.items[i].g = g; setMeal(d, slot, m.items); }, `${slot} ${fmtShort(date)}: ${it.name} ${fmtK(g)} g`),
+        initialUnit: it.unit || null,
+        onSave: (g, u) => ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); m.items[i].g = g; if (u) m.items[i].unit = u; else delete m.items[i].unit; setMeal(d, slot, m.items); }, `${slot} ${fmtShort(date)}: ${it.name} ${fmtK(g)} g`),
       }));
       $('#iMove', sh).addEventListener('change', (e) => {
         const to = e.target.value;
@@ -245,43 +343,87 @@ function itemSheet(ctx, date, slot, i) {
   });
 }
 
-// ---------------------------------------------------------------- alimento propio
+// ---------------------------------------------------------------- alimento propio (crear o editar)
 function customFoodSheet(ctx, date, slot, pre = {}) {
-  openSheet(`<h3>Crear alimento</h3><div class="muted">Copia la tabla de la etiqueta (valores por 100 g). Queda guardado para siempre.</div>
+  foodEditor(ctx, date, slot, { ...pre, per100: null });
+}
+
+/**
+ * Crear o editar un alimento. Editar uno propio lo actualiza; editar uno de la base (genérico o producto)
+ * crea tu versión, que desde entonces sale primero y la usa el escáner. Unidades: «1 pastilla = 5,5 g».
+ * Los valores se pueden meter por 100 g o por unidad (como vengan en la etiqueta).
+ */
+function foodEditor(ctx, date, slot, food) {
+  const isMine = String(food.id || '').startsWith('mine:');
+  const isNew = !food.per100;
+  const units = [...(food.units || [])];
+  const per = food.per100 || {};
+  const unitRow = (u, i) => `<div class="row" data-unit="${i}" style="gap:6px;margin-bottom:6px"><input class="inp sm" data-f="un" value="${esc(u.name || '')}" placeholder="pastilla, ración, scoop…" style="flex:1"><div class="unit-wrap" style="width:110px"><input class="inp sm" data-f="ug" inputmode="decimal" value="${u.g != null ? fmt(u.g, u.g % 1 ? 1 : 0) : ''}" placeholder="peso"><span class="u">g</span></div><button type="button" class="mini danger" data-udel="${i}" aria-label="Quitar unidad">${icon.trash}</button></div>`;
+  openSheet(`<h3>${isNew ? 'Crear alimento' : isMine ? 'Editar alimento' : 'Tu versión de este alimento'}</h3>
+    <div class="muted">${isNew ? 'Copia la tabla de la etiqueta. Queda guardado para siempre.' : isMine ? 'Cambia lo que necesites.' : 'El original de la base no se toca: se guarda tu versión y es la que saldrá primero (también al escanear).'}</div>
     <div class="stack" style="margin-top:12px">
-      <div class="field"><label for="cN">Nombre</label><input class="inp" id="cN" value="${esc(pre.name || '')}" placeholder="p. ej. Patatas cocidas bote"></div>
-      <div class="g2"><div class="field"><label for="cB">Marca</label><input class="inp" id="cB" value="${esc(pre.brand || '')}" placeholder="Hacendado"></div><div class="field"><label for="cS">Tienda</label><input class="inp" id="cS" value="${esc(pre.stores || '')}" placeholder="Mercadona"></div></div>
-      <div class="g2"><div class="field"><label for="cK">Kcal</label><input class="inp" id="cK" inputmode="decimal"></div><div class="field"><label for="cP">Proteína g</label><input class="inp" id="cP" inputmode="decimal"></div></div>
-      <div class="g2"><div class="field"><label for="cC">Carbohidratos g</label><input class="inp" id="cC" inputmode="decimal"></div><div class="field"><label for="cF">Grasas g</label><input class="inp" id="cF" inputmode="decimal"></div></div>
-      <div class="g2"><div class="field"><label for="cQ">Envase (opcional)</label><input class="inp" id="cQ" value="${esc(pre.qty || '')}" placeholder="400 g"></div><div class="field"><label for="cE">Código de barras</label><input class="inp" id="cE" inputmode="numeric" value="${esc(pre.ean || '')}"></div></div>
+      <div class="field"><label for="cN">Nombre</label><input class="inp" id="cN" value="${esc(food.name || '')}" placeholder="p. ej. Pastillas de dextrosa"></div>
+      <div class="g2"><div class="field"><label for="cB">Marca</label><input class="inp" id="cB" value="${esc(food.brand || '')}"></div><div class="field"><label for="cS">Tienda</label><input class="inp" id="cS" value="${esc(food.stores || '')}"></div></div>
+
+      <div class="grp">Unidades (opcional)</div>
+      <div class="muted small" style="margin-top:-4px">Para apuntar «4 pastillas» en vez de gramos. Si el envase no dice cuánto pesa una, pon los gramos de lo que aporta (p. ej. 5,5 g de dextrosa).</div>
+      <div id="uList">${units.map(unitRow).join('')}</div>
+      <button type="button" class="btn secondary sm" id="uAdd">${icon.plus} Añadir unidad</button>
+
+      <div class="grp">Valores nutricionales</div>
+      <div class="seg" id="cPer"><button data-v="100" class="on">Por 100 g</button><button data-v="unit">Por 1 unidad</button></div>
+      <div class="g2"><div class="field"><label for="cK">Kcal</label><input class="inp" id="cK" inputmode="decimal" value="${per.kcal != null ? fmt(per.kcal) : ''}"></div><div class="field"><label for="cP">Proteína g</label><input class="inp" id="cP" inputmode="decimal" value="${per.p != null ? fmt(per.p) : ''}"></div></div>
+      <div class="g2"><div class="field"><label for="cC">Carbohidratos g</label><input class="inp" id="cC" inputmode="decimal" value="${per.c != null ? fmt(per.c) : ''}"></div><div class="field"><label for="cF">Grasas g</label><input class="inp" id="cF" inputmode="decimal" value="${per.f != null ? fmt(per.f) : ''}"></div></div>
+      <div class="g2"><div class="field"><label for="cQ">Envase (opcional)</label><input class="inp" id="cQ" value="${esc(food.qty || '')}" placeholder="200 pastillas · 400 g"></div><div class="field"><label for="cE">Código de barras</label><input class="inp" id="cE" inputmode="numeric" value="${esc(food.ean || '')}"></div></div>
       <div class="hint" id="cChk"></div>
       <div class="sheet-actions"><button class="btn primary" id="cSave">Guardar y elegir cantidad</button></div>
     </div>`, {
     bind: (sh) => {
+      const readUnits = () => $$('[data-unit]', sh).map((r) => ({ name: $('[data-f="un"]', r).value.trim(), g: num($('[data-f="ug"]', r).value) })).filter((u) => u.name && u.g > 0);
+      const bindUnits = () => $$('[data-udel]', sh).forEach((b) => b.addEventListener('click', () => { const u = readUnits(); u.splice(+b.dataset.udel, 1); $('#uList', sh).innerHTML = u.map(unitRow).join(''); bindUnits(); }));
+      bindUnits();
+      $('#uAdd', sh).addEventListener('click', () => { const u = [...readUnits(), { name: '', g: null }]; $('#uList', sh).innerHTML = u.map(unitRow).join(''); bindUnits(); $$('[data-f="un"]', sh).pop()?.focus(); });
+      bindSeg(sh, '#cPer', (v) => {
+        if (v === 'unit' && !readUnits().length) { toast('Primero añade la unidad y su peso'); $$('#cPer button', sh).forEach((b) => b.classList.toggle('on', b.dataset.v === '100')); }
+      });
       const vals = () => ({ kcal: num($('#cK', sh).value), p: num($('#cP', sh).value), c: num($('#cC', sh).value), f: num($('#cF', sh).value) });
       const chk = () => {
         const v = vals();
         if ([v.p, v.c, v.f].some((x) => x == null)) { $('#cChk', sh).textContent = ''; return; }
         const est = 4 * v.p + 4 * v.c + 9 * v.f;
-        if (v.kcal == null) { $('#cK', sh).placeholder = fmtK(est); }
-        $('#cChk', sh).textContent = v.kcal != null && Math.abs(v.kcal - est) > Math.max(25, est * 0.25) ? `Ojo: con esos macros saldrían unas ${fmtK(est)} kcal. Revisa la etiqueta.` : '';
+        if (v.kcal == null) $('#cK', sh).placeholder = fmtK(est);
+        $('#cChk', sh).textContent = v.kcal != null && Math.abs(v.kcal - est) > Math.max(5, est * 0.25) ? `Ojo: con esos macros saldrían unas ${fmtK(est)} kcal. Revisa la etiqueta.` : '';
       };
-      ['#cK', '#cP', '#cC', '#cF'].forEach((s) => $(s, sh).addEventListener('input', chk));
+      ['#cK', '#cP', '#cC', '#cF'].forEach((x) => $(x, sh).addEventListener('input', chk));
       $('#cSave', sh).addEventListener('click', () => {
         const v = vals();
         const name = $('#cN', sh).value.trim();
+        const us = readUnits();
         if (!name) return toast('Pon un nombre');
         if ([v.p, v.c, v.f].some((x) => x == null)) return toast('Faltan proteína, carbohidratos o grasas');
         if (v.kcal == null) v.kcal = Math.round(4 * v.p + 4 * v.c + 9 * v.f);
-        const food = { id: `mine:${Date.now().toString(36)}`, name, brand: $('#cB', sh).value.trim() || undefined, stores: $('#cS', sh).value.trim() || undefined, qty: $('#cQ', sh).value.trim() || undefined, ean: $('#cE', sh).value.trim() || undefined, per100: v, source: 'manual' };
+        // por unidad → por 100 g (usando la primera unidad)
+        const perUnit = $('#cPer button.on', sh)?.dataset.v === 'unit';
+        if (perUnit) {
+          if (!us.length) return toast('Añade la unidad y su peso');
+          const k = 100 / us[0].g;
+          for (const key of ['kcal', 'p', 'c', 'f']) v[key] = Math.round(v[key] * k * 10) / 10;
+        }
+        const id = isMine ? food.id : `mine:${Date.now().toString(36)}`;
+        const saved = {
+          id, name, brand: $('#cB', sh).value.trim() || undefined, stores: $('#cS', sh).value.trim() || undefined,
+          qty: $('#cQ', sh).value.trim() || undefined, ean: $('#cE', sh).value.trim() || undefined,
+          units: us.length ? us : undefined, per100: v, source: isMine ? food.source || 'manual' : isNew ? 'manual' : `copia:${food.id}`,
+        };
         ctx.store.update(FILES.foods, (doc) => {
           doc = doc && typeof doc === 'object' ? doc : {};
           doc.custom ||= []; doc.recipes ||= []; doc.frequent ||= {};
-          doc.custom.push(JSON.parse(JSON.stringify(food)));
+          doc.custom = [...doc.custom.filter((x) => x.id !== id), JSON.parse(JSON.stringify(saved))];
+          if (!isMine && food.id && doc.frequent[food.id]) doc.frequent[id] = doc.frequent[food.id]; // hereda la frecuencia
           return doc;
-        }, `Alimento propio: ${name}`);
+        }, `${isNew ? 'Alimento propio' : 'Edita alimento'}: ${name}`);
         toast('Alimento guardado');
-        gramsSheet(ctx, date, slot, { ...food, src: 'mine' });
+        gramsSheet(ctx, date, slot, { ...saved, src: 'mine' });
       });
     },
   });

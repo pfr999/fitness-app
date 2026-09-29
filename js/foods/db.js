@@ -18,7 +18,7 @@ export function loadFoods() {
     ]);
     const items = [
       ...g.map(([id, name, aliases, kcal, pr, c, f]) => ({ id: `gen:${id}`, name, aliases: aliases ? aliases.split('|') : [], per100: { kcal, p: pr, c, f }, src: 'gen' })),
-      ...p.map(([ean, name, brand, stores, qty, kcal, pr, c, f, scans]) => ({ id: `off:${ean}`, ean, name, brand, stores, qty, per100: { kcal, p: pr, c, f }, scans, src: 'off' })),
+      ...p.map(([ean, name, brand, stores, qty, kcal, pr, c, f, scans, serv]) => ({ id: `off:${ean}`, ean, name, brand, stores, qty, per100: { kcal, p: pr, c, f }, scans, src: 'off', ...(serv ? { units: [{ name: 'ración', g: serv }] } : {}) })),
     ];
     main = { items, index: buildIndex(items), byId: new Map(items.map((x) => [x.id, x])), byEan: new Map(items.filter((x) => x.ean).map((x) => [x.ean, x])) };
     return main;
@@ -59,7 +59,7 @@ export function byEan(ean, foodsDoc) {
 
 // ---------------------------------------------------------------- en línea (Open Food Facts)
 const OFF = 'https://world.openfoodfacts.org';
-const FIELDS = 'code,product_name,product_name_es,brands,stores,quantity,nutriments';
+const FIELDS = 'code,product_name,product_name_es,brands,stores,quantity,serving_quantity,nutriments';
 
 function fromOff(p) {
   const n = p.nutriments || {};
@@ -71,6 +71,7 @@ function fromOff(p) {
     id: `off:${p.code}`, ean: p.code, name: (p.product_name_es || p.product_name || '').trim() || `Producto ${p.code}`,
     brand: (p.brands || '').split(',')[0].trim(), stores: (p.stores || '').split(',').slice(0, 3).join(', '), qty: p.quantity || '',
     per100, src: 'off', online: true,
+    ...(+p.serving_quantity > 0 && +p.serving_quantity <= 1000 ? { units: [{ name: 'ración', g: Math.round(+p.serving_quantity * 10) / 10 }] } : {}),
   };
 }
 

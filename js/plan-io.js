@@ -26,7 +26,8 @@ export function exportPlan(v) {
       proteina_g: v.diet.protein_g,
       carbohidratos_g: v.diet.carbs_g,
       grasas_g: v.diet.fat_g,
-      comidas: (v.diet.meals || []).map((m) => ({ nombre: m.slot, porciones: m.portions || {} })),
+      modo_comidas: v.diet.meals_mode === 'free' ? 'libres' : 'fijas',
+      comidas: (v.diet.meals || []).map((m) => ({ nombre: m.slot, ...(m.portions && Object.keys(m.portions).length ? { porciones: m.portions } : {}), ...(m.target ? { objetivo: { proteina_g: m.target.p, carbohidratos_g: m.target.c, grasas_g: m.target.f } } : {}) })),
       reglas: v.diet.rules || [],
     },
     rutina: {
@@ -94,19 +95,24 @@ export function parsePlan(obj) {
     for (const k of ['proteina_g', 'carbohidratos_g', 'grasas_g']) need(num(d[k]) >= 0, `dieta.${k} debe ser un número`);
     const meals = (d.comidas || []).map((m, i) => {
       need(m && m.nombre, `dieta.comidas[${i}] sin nombre`);
-      return { slot: String(m?.nombre || ''), portions: Object.fromEntries(Object.entries(m?.porciones || {}).filter(([k, n]) => ['P', 'C', 'G', 'F', 'L'].includes(k) && +n > 0).map(([k, n]) => [k, +n])) };
+      const out = { slot: String(m?.nombre || '') };
+      const por = Object.fromEntries(Object.entries(m?.porciones || {}).filter(([k, n]) => ['P', 'C', 'G', 'F', 'L'].includes(k) && +n > 0).map(([k, n]) => [k, +n]));
+      if (Object.keys(por).length) out.portions = por;
+      if (m?.objetivo) out.target = { p: num(m.objetivo.proteina_g) || 0, c: num(m.objetivo.carbohidratos_g) || 0, f: num(m.objetivo.grasas_g) || 0 };
+      return out;
     });
     const kcalMacros = 4 * num(d.proteina_g) + 4 * num(d.carbohidratos_g) + 9 * num(d.grasas_g);
     if (kt && Math.abs(kcalMacros - kt) > kt * 0.12) warnings.push(`Los macros suman ${Math.round(kcalMacros)} kcal y el objetivo de entreno es ${Math.round(kt)} kcal.`);
     sections.push('dieta');
     ops.push((v) => {
-      v.diet = { kcal: { train: kt, rest: kr }, protein_g: num(d.proteina_g), carbs_g: num(d.carbohidratos_g), fat_g: num(d.grasas_g), meals, rules: (d.reglas || []).map(String).filter(Boolean) };
+      const free = /libre/i.test(d.modo_comidas || '');
+      v.diet = { kcal: { train: kt, rest: kr }, protein_g: num(d.proteina_g), carbs_g: num(d.carbohidratos_g), fat_g: num(d.grasas_g), meals_mode: free ? 'free' : 'fixed', meals: free ? [] : meals, rules: (d.reglas || []).map(String).filter(Boolean) };
     });
   }
 
   if (obj.rutina) {
     const days = obj.rutina.dias;
-    need(Array.isArray(days) && days.length, 'rutina.dias debe ser una lista con al menos un día');
+    need(Array.isArray(days), 'rutina.dias debe ser una lista (puede estar vacía)');
     const out = (days || []).map((day, i) => {
       need(day?.nombre, `rutina.dias[${i}] sin nombre`);
       need(Array.isArray(day?.ejercicios), `rutina.dias[${i}].ejercicios debe ser una lista`);

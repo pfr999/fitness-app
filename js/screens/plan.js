@@ -39,7 +39,7 @@ export function diffText(a, b) {
   kd(a.diet.protein_g, b.diet.protein_g, 'proteína');
   kd(a.diet.carbs_g, b.diet.carbs_g, 'carbohidratos');
   kd(a.diet.fat_g, b.diet.fat_g, 'grasas');
-  if (JSON.stringify(a.diet.meals) !== JSON.stringify(b.diet.meals)) out.push('comidas');
+  if (JSON.stringify(a.diet.meals) !== JSON.stringify(b.diet.meals) || (a.diet.meals_mode || 'fixed') !== (b.diet.meals_mode || 'fixed')) out.push('comidas');
   if (JSON.stringify(a.diet.rules) !== JSON.stringify(b.diet.rules)) out.push('reglas de dieta');
   if (JSON.stringify(a.routine) !== JSON.stringify(b.routine)) out.push('rutina');
   const sa = new Set(a.supplements.map((s) => s.name)), sb = new Set(b.supplements.map((s) => s.name));
@@ -112,8 +112,11 @@ function renderDiet(v) {
       </div>
       <div class="hint">Los macros suman ${fmtK(kcalMacros)} kcal.</div>
     </div>
-    <div class="card"><div class="ch"><h2>Comidas y porciones</h2><button class="link" data-quick="diet">Editar</button></div>
-      ${(d.meals || []).map((m) => `<div class="meal"><span>${esc(m.slot)}</span><div class="por">${Object.entries(m.portions || {}).filter(([, n]) => n).map(([k, n]) => `<span class="${esc(k)}">${esc(n)}${esc(k)}</span>`).join('')}</div></div>`).join('') || '<div class="muted">Sin comidas definidas.</div>'}
+    <div class="card"><div class="ch"><h2>Comidas</h2><button class="link" data-quick="diet">Editar</button></div>
+      ${d.meals_mode === 'free'
+        ? '<div class="muted">Libres: cada día añades las comidas que hagas. Lo que cuenta es el total del día.</div>'
+        : `<div class="muted small" style="margin:-6px 0 6px">Fijas: aparecen cada día${(d.meals || []).some((m) => m.target || (m.portions && Object.keys(m.portions).length)) ? '' : ', sin objetivo propio (cuenta el total del día)'}.</div>
+          ${((d.meals || []).length ? d.meals : [1, 2, 3].map((n) => ({ slot: `Comida ${n}` }))).map((m) => `<div class="meal"><span>${esc(m.slot)}</span>${m.target ? `<span class="muted small num">P ${fmtK(m.target.p || 0)} · C ${fmtK(m.target.c || 0)} · G ${fmtK(m.target.f || 0)} g</span>` : `<div class="por">${Object.entries(m.portions || {}).filter(([, n]) => n).map(([k, n]) => `<span class="${esc(k)}">${esc(n)}${esc(k)}</span>`).join('')}</div>`}</div>`).join('')}`}
     </div>
     <div class="card"><div class="ch"><h2>Reglas</h2><button class="link" data-quick="diet">Editar</button></div>
       ${(d.rules || []).map((r) => `<div style="font-size:14px;margin-bottom:6px">${esc(r)}</div>`).join('') || '<div class="muted">Sin reglas.</div>'}
@@ -227,19 +230,30 @@ function kcalSheet(ctx) {
 function dietSheet(ctx) {
   const v = currentPlan(plan(ctx));
   const d = structuredClone(v.diet);
-  d.meals ||= []; d.rules ||= [];
-  const mealRow = (m, i) => `<div class="row-edit" data-meal="${i}" style="grid-template-columns:1fr auto">
-      <div class="stack" style="gap:6px"><input class="inp sm" data-f="slot" value="${esc(m.slot)}" placeholder="Nombre de la comida">
-        <div class="g3">${['P', 'C', 'G'].map((k) => `<div class="unit-wrap"><input class="inp sm" data-f="${k}" inputmode="decimal" value="${m.portions?.[k] ?? ''}" placeholder="0"><span class="u">${k}</span></div>`).join('')}</div></div>
-      <button class="mini danger" data-delmeal="${i}" aria-label="Quitar comida">${icon.trash}</button></div>`;
+  d.rules ||= [];
+  let mode = d.meals_mode === 'free' ? 'free' : 'fixed';
+  d.meals = (d.meals || []).length ? d.meals : [1, 2, 3].map((n) => ({ slot: `Comida ${n}` }));
+  // cada comida: nombre + objetivo opcional (sin objetivo · gramos de macros · porciones)
+  const kindOf = (m) => (m.target ? 'g' : m.portions && Object.keys(m.portions).length ? 'por' : 'none');
+  const mealRow = (m, i) => { const k = kindOf(m); return `<div class="card flat" data-meal="${i}" data-kind="${k}" style="padding:10px;margin-bottom:8px">
+      <div class="row" style="gap:6px"><input class="inp sm" data-f="slot" value="${esc(m.slot)}" placeholder="Nombre (Comida 1, Intra-entreno…)" style="flex:1">
+        <button type="button" class="mini" data-upmeal="${i}" aria-label="Subir">${icon.up}</button><button type="button" class="mini danger" data-delmeal="${i}" aria-label="Quitar comida">${icon.trash}</button></div>
+      <div class="seg" data-kseg style="margin-top:8px"><button type="button" data-v="none" class="${k === 'none' ? 'on' : ''}">Sin objetivo</button><button type="button" data-v="g" class="${k === 'g' ? 'on' : ''}">Macros (g)</button><button type="button" data-v="por" class="${k === 'por' ? 'on' : ''}">Porciones</button></div>
+      <div class="g3" data-kg style="margin-top:8px" ${k === 'g' ? '' : 'hidden'}>${[['p', 'P'], ['c', 'C'], ['f', 'G']].map(([f, l]) => `<div class="unit-wrap"><input class="inp sm" data-t="${f}" inputmode="decimal" value="${m.target?.[f] ?? ''}" placeholder="0"><span class="u">${l} g</span></div>`).join('')}</div>
+      <div class="g3" data-kpor style="margin-top:8px" ${k === 'por' ? '' : 'hidden'}>${['P', 'C', 'G'].map((f) => `<div class="unit-wrap"><input class="inp sm" data-p="${f}" inputmode="decimal" value="${m.portions?.[f] ?? ''}" placeholder="0"><span class="u">${f}</span></div>`).join('')}</div>
+    </div>`; };
   openSheet(`<h3>Dieta</h3>
     <div class="stack" style="margin-top:12px">
       <div class="g2"><div class="field"><label for="dT">Kcal entreno</label><input class="inp" id="dT" inputmode="numeric" value="${d.kcal.train}"></div><div class="field"><label for="dR">Kcal descanso</label><input class="inp" id="dR" inputmode="numeric" value="${d.kcal.rest}"></div></div>
       <div class="g3"><div class="field"><label for="dP">Proteína g</label><input class="inp" id="dP" inputmode="numeric" value="${d.protein_g}"></div><div class="field"><label for="dC">Carbos g</label><input class="inp" id="dC" inputmode="numeric" value="${d.carbs_g}"></div><div class="field"><label for="dF">Grasas g</label><input class="inp" id="dF" inputmode="numeric" value="${d.fat_g}"></div></div>
       <div class="hint" id="dSum"></div>
-      <div class="grp">Comidas y porciones</div>
-      <div id="meals">${d.meals.map(mealRow).join('')}</div>
-      <button class="btn secondary sm" id="addMeal" type="button">${icon.plus} Añadir comida</button>
+      <div class="grp">Comidas</div>
+      <div class="seg" id="mMode"><button type="button" data-v="fixed" class="${mode === 'fixed' ? 'on' : ''}">Fijas</button><button type="button" data-v="free" class="${mode === 'free' ? 'on' : ''}">Libres (las añado cada día)</button></div>
+      <div class="hint" id="mHint"></div>
+      <div id="mFixed" ${mode === 'fixed' ? '' : 'hidden'}>
+        <div id="meals">${d.meals.map(mealRow).join('')}</div>
+        <button class="btn secondary sm" id="addMeal" type="button" style="width:100%">${icon.plus} Añadir comida</button>
+      </div>
       <div class="field"><label for="dRules">Reglas (una por línea)</label><textarea class="inp" id="dRules">${esc(d.rules.join('\n'))}</textarea></div>
       ${reasonField}
       <div class="sheet-actions"><button class="btn primary" id="dSave">Guardar nueva versión</button></div>
@@ -247,17 +261,35 @@ function dietSheet(ctx) {
     bind: (sh) => {
       const sum = () => { $('#dSum', sh).textContent = `Los macros suman ${fmtK((int($('#dP', sh).value) || 0) * 4 + (int($('#dC', sh).value) || 0) * 4 + (int($('#dF', sh).value) || 0) * 9)} kcal.`; };
       ['#dP', '#dC', '#dF'].forEach((s) => $(s, sh).addEventListener('input', sum)); sum();
-      const collect = () => $$('[data-meal]', sh).map((row) => ({ slot: $('[data-f="slot"]', row).value.trim(), portions: Object.fromEntries(['P', 'C', 'G'].map((k) => [k, num($(`[data-f="${k}"]`, row).value) || 0]).filter(([, n]) => n)) })).filter((m) => m.slot);
-      const redraw = (meals) => { $('#meals', sh).innerHTML = meals.map(mealRow).join(''); bindDel(); };
-      const bindDel = () => $$('[data-delmeal]', sh).forEach((b) => b.addEventListener('click', () => { const m = collect(); m.splice(+b.dataset.delmeal, 1); redraw(m); }));
-      bindDel();
-      $('#addMeal', sh).addEventListener('click', () => redraw([...collect(), { slot: '', portions: {} }]));
+      const hint = () => { $('#mHint', sh).textContent = mode === 'fixed' ? 'Aparecen cada día en Comidas. El objetivo por comida es opcional: si no pones ninguno, solo cuenta el total del día.' : 'Cada día añades las comidas que hagas (con el nombre que quieras). Solo cuenta el total del día.'; };
+      hint();
+      bindSeg(sh, '#mMode', (val) => { mode = val; $('#mFixed', sh).hidden = val !== 'fixed'; hint(); });
+      const collect = () => $$('[data-meal]', sh).map((row) => {
+        const k = $('[data-kseg] button.on', row)?.dataset.v || 'none';
+        const m = { slot: $('[data-f="slot"]', row).value.trim() };
+        if (k === 'g') m.target = Object.fromEntries(['p', 'c', 'f'].map((f) => [f, num($(`[data-t="${f}"]`, row).value) || 0]));
+        if (k === 'por') m.portions = Object.fromEntries(['P', 'C', 'G'].map((f) => [f, num($(`[data-p="${f}"]`, row).value) || 0]).filter(([, n]) => n));
+        return m;
+      }).filter((m) => m.slot);
+      const redraw = (meals) => { $('#meals', sh).innerHTML = meals.map(mealRow).join(''); bindRows(); };
+      const bindRows = () => {
+        $$('[data-delmeal]', sh).forEach((b) => b.addEventListener('click', () => { const m = collect(); m.splice(+b.dataset.delmeal, 1); redraw(m); }));
+        $$('[data-upmeal]', sh).forEach((b) => b.addEventListener('click', () => { const i = +b.dataset.upmeal; if (!i) return; const m = collect(); [m[i - 1], m[i]] = [m[i], m[i - 1]]; redraw(m); }));
+        $$('[data-meal]', sh).forEach((row) => $$('[data-kseg] button', row).forEach((b) => b.addEventListener('click', () => {
+          $$('[data-kseg] button', row).forEach((x) => x.classList.toggle('on', x === b));
+          $('[data-kg]', row).hidden = b.dataset.v !== 'g';
+          $('[data-kpor]', row).hidden = b.dataset.v !== 'por';
+        })));
+      };
+      bindRows();
+      $('#addMeal', sh).addEventListener('click', () => { const m = collect(); redraw([...m, { slot: `Comida ${m.length + 1}` }]); });
       $('#dSave', sh).addEventListener('click', () => {
         const next = {
           ...d,
           kcal: { train: int($('#dT', sh).value) || d.kcal.train, rest: int($('#dR', sh).value) || d.kcal.rest },
           protein_g: int($('#dP', sh).value) ?? d.protein_g, carbs_g: int($('#dC', sh).value) ?? d.carbs_g, fat_g: int($('#dF', sh).value) ?? d.fat_g,
-          meals: collect(),
+          meals_mode: mode,
+          meals: mode === 'fixed' ? collect() : [],
           rules: $('#dRules', sh).value.split('\n').map((s) => s.trim()).filter(Boolean),
         };
         if (savePlan(ctx, (p) => { p.diet = next; }, $('#why', sh).value)) { closeSheet(); ctx.render(); }
@@ -493,7 +525,8 @@ export const CLAUDE_PROMPT = `Cuando cerremos un plan, dámelo en «formato Reco
   "objetivos": { "peso_kg": 97, "cintura_cm": 91, "pasos": 10000, "sesiones_semana": 5, "sueno_h": 7.5, "ritmo_pct_semana": null },
   "dieta": {
     "kcal_entreno": 3150, "kcal_descanso": 2850, "proteina_g": 260, "carbohidratos_g": 330, "grasas_g": 85,
-    "comidas": [ { "nombre": "Desayuno", "porciones": { "P": 3, "C": 3, "G": 2 } } ],
+    "modo_comidas": "fijas",
+    "comidas": [ { "nombre": "Comida 1", "objetivo": { "proteina_g": 50, "carbohidratos_g": 80, "grasas_g": 20 } }, { "nombre": "Intra-entreno", "porciones": { "C": 1 } }, { "nombre": "Comida 3" } ],
     "reglas": [ "Comida libre opcional el domingo en la cena (máx. 1.200 kcal)" ]
   },
   "rutina": { "dias": [ { "nombre": "Día 1 · Pierna", "ejercicios": [
@@ -502,7 +535,7 @@ export const CLAUDE_PROMPT = `Cuando cerremos un plan, dámelo en «formato Reco
   "suplementos": [ { "nombre": "Creatina", "dosis": "5 g", "momento": "Con una comida", "tipo": "suplemento" } ]
 }
 
-Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "ritmo_pct_semana" es null (automático) o [mín, máx] en % de peso por semana; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
+Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "ritmo_pct_semana" es null (automático) o [mín, máx] en % de peso por semana; "modo_comidas" es "fijas" (lista de "comidas", cada una con "objetivo" en gramos, "porciones" o nada) o "libres" (sin lista; se añaden cada día); nunca repartas el total del día entre comidas si no te lo pido; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
 
 async function copyText(text, okMsg) {
   try { await navigator.clipboard.writeText(text); toast(okMsg); }

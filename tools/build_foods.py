@@ -6,7 +6,7 @@ Entradas (se descargan aparte, ver tools/README.md):
   - tools/data/ciqual_es.json : traducción al español de los nombres de CIQUAL {id: {n, a}} (versionada)
 Salidas:
   - foods/generic.json  : [[id, nombre, alias|alias, kcal, p, c, g], ...]
-  - foods/products.json : [[ean, nombre, marca, tiendas, cantidad, kcal, p, c, g, escaneos], ...]
+  - foods/products.json : [[ean, nombre, marca, tiendas, cantidad, kcal, p, c, g, escaneos, ración_g], ...]
   - foods/meta.json     : fecha, recuentos y licencias
 Uso: python3 tools/build_foods.py <carpeta_entradas>
 """
@@ -46,7 +46,7 @@ for x in chosen:
         continue
     seen.add(x['ean'])
     products.append([x['ean'], clean(x['name'], 90), clean(x['brand'].split(',')[0], 40), stores(x['stores']), clean(x['qty'], 24),
-                     r1(x['kcal']), r1(x['p']), r1(x['c']), r1(x['f']), x['scans']])
+                     r1(x['kcal']), r1(x['p']), r1(x['c']), r1(x['f']), x['scans'], r1(x.get('serv')) or 0])
 
 # ---------- genéricos ----------
 raw = json.load(open(os.path.join(src, 'ciqual_raw.json')))

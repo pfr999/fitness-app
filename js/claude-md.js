@@ -2,7 +2,7 @@
 // datos como CLAUDE.md. Así, al trabajar sobre el repo, Claude sabe qué es cada fichero y cómo cambiarlo
 // sin romper nada. Cambia DATA_DOC_VERSION cuando cambie el modelo de datos.
 
-export const DATA_DOC_VERSION = 3;
+export const DATA_DOC_VERSION = 4;
 
 export const CLAUDE_MD = `# Recomp · repo de datos
 
@@ -45,7 +45,9 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
   "changes": [ { "at": "<fecha-hora ISO>", "reason": "<motivo corto>" } ],
   "targets": { "rate_pct_week": null, "steps": 10000, "sessions": 5, "sleep_h": 7.5, "waist_cm": 91, "weight_kg": 97 },
   "diet": { "kcal": { "train": 3150, "rest": 2850 }, "protein_g": 260, "carbs_g": 330, "fat_g": 85,
-            "meals": [ { "slot": "Desayuno", "portions": { "P": 3, "C": 3, "G": 2 } } ], "rules": [ "…" ] },
+            "meals_mode": "fixed",
+            "meals": [ { "slot": "Comida 1", "target": { "p": 50, "c": 80, "f": 20 } }, { "slot": "Intra-entreno", "portions": { "C": 1 } }, { "slot": "Comida 3" } ],
+            "rules": [ "…" ] },
   "routine": { "days": [ { "name": "Día 1 · Pierna", "items": [
       { "name": "Sentadilla trasera", "ex": "sentadilla", "sets": 4, "reps": [6, 8], "rpe": 8, "note": "…" } ] } ] },
   "supplements": [ { "name": "Creatina", "dose": "5 g", "timing": "Con una comida", "kind": "supplement" } ] }
@@ -53,6 +55,9 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 - Si ya existe una versión con \`from\` = hoy, **modifica esa** (mismo \`v\`) y añade una entrada a su \`changes\`.
 - \`rate_pct_week\`: \`null\` = automático según % graso; o \`[mín, máx]\` en % de peso por semana.
 - \`kind\`: \`supplement\` o \`medication\`. Porciones: P proteína, C carbohidrato, G grasa, F fruta, L lácteo.
+- Comidas: \`meals_mode\` \`fixed\` (lista \`meals\`, cada una con \`target\` en gramos, \`portions\` o nada) o \`free\`
+  (\`meals\` vacío: se añaden cada día). **No repartas** el objetivo del día entre comidas salvo que lo pida.
+- En los días, un alimento puede llevar \`unit\` \`{ "name": "pastilla", "g": 5.5, "n": 4 }\` (\`g\` del registro = n × g).
 - Ejercicios: \`name\` libre; la app los reconoce por nombre en su catálogo (~100 comunes: «Press banca con barra»,
   «Remo con mancuernas en banco inclinado», «Curl femoral sentado»…). Si inventas uno que no es habitual,
   añádelo a \`exercises.json\` con sus músculos (1 directo, 0.5 indirecto; claves: pecho, espalda, trapecio,

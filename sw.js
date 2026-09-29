@@ -1,6 +1,6 @@
 // Service worker: cachea la app para abrir al instante y sin conexión.
 // Al publicar una versión nueva, CAMBIA `VERSION`: la app mostrará «Nueva versión disponible».
-const VERSION = 'v0.8.1';
+const VERSION = 'v0.9.0';
 const CACHE = `recomp-${VERSION}`;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'fonts/manrope-latin.woff2',
@@ -18,7 +18,7 @@ self.addEventListener('install', (e) => {
 
 // La base de alimentos (varios MB) no se precarga: se guarda la primera vez que se usa y se
 // conserva entre versiones de la app. Al regenerarla (tools/), cambia esta fecha.
-const FOODS = 'recomp-foods-2026-09-27';
+const FOODS = 'recomp-foods-2026-09-29';
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('recomp-') && k !== CACHE && k !== FOODS).map((k) => caches.delete(k)))).then(() => self.clients.claim()));

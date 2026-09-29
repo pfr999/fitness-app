@@ -8,7 +8,8 @@ reader = csv.reader(io.TextIOWrapper(src, encoding='utf-8', errors='replace', ne
 h = next(reader)
 ix = {k: i for i, k in enumerate(h)}
 need = ['code', 'product_name', 'brands', 'stores', 'countries_tags', 'quantity', 'unique_scans_n',
-        'energy-kcal_100g', 'proteins_100g', 'carbohydrates_100g', 'fat_100g', 'fiber_100g', 'last_modified_t']
+        'energy-kcal_100g', 'proteins_100g', 'carbohydrates_100g', 'fat_100g', 'fiber_100g', 'last_modified_t',
+        'serving_size', 'serving_quantity']
 missing = [k for k in need if k not in ix]
 print('columnas que faltan:', missing, file=sys.stderr)
 
@@ -55,6 +56,9 @@ for row in reader:
         'scans': int(scans),
         'kcal': round(kcal, 1), 'p': round(p, 1), 'c': round(c, 1), 'f': round(fat, 1),
         'fib': (lambda v: None if v is None else round(v, 1))(f(row, 'fiber_100g')),
+        # ración del fabricante (g), si es razonable
+        'serv': (lambda v: round(v, 1) if v and 1 <= v <= 1000 else None)(f(row, 'serving_quantity')),
+        'serv_label': row[ix['serving_size']].strip()[:30] if 'serving_size' in ix and len(row) > ix['serving_size'] else '',
     })
     kept += 1
 
