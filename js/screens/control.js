@@ -65,10 +65,11 @@ function newDraft(ctx, date) {
     skinfolds: ck.skinfolds || {},
     photos: ck.photos || [],
     ratings: ck.ratings || {},
-    adherence: ck.adherence || { status: 'plan', kcal_week: null },
+    adherence: { status: 'plan', kcal_week: null, ...(ck.adherence || {}) },
     autoreg: ck.autoreg || {},
     note: ck.note || '',
-    decision: ck.decision || { type: 'keep', text: '' },
+    // al guardar se quitan los campos vacíos: un control sin texto en la decisión vuelve sin «text»
+    decision: { type: ck.decision?.type || 'keep', text: ck.decision?.text || '' },
   };
 }
 
@@ -386,7 +387,7 @@ async function save(ctx) {
   const v = planFor(ctx.store.get(FILES.plan), d.date);
   const shown = musclesTrained(ctx.store.allDays(), d.date, exercisesOf(ctx), v?.routine).filter((m) => MUSCLE_LABEL[m]);
   const autoreg = Object.fromEntries(shown.map((m) => [m, { soreness: 2, performance: 2, ...(d.autoreg[m] || {}) }]));
-  const checkin = { autoreg: Object.keys(autoreg).length ? autoreg : undefined, measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence: d.adherence.status === 'plan' ? undefined : d.adherence, note: d.note.trim() || undefined, decision: { type: d.decision.type, text: d.decision.text.trim() || undefined } };
+  const checkin = { autoreg: Object.keys(autoreg).length ? autoreg : undefined, measures: d.measures, skinfolds: d.skinfolds, photos: d.photos, photos_from: d.photoDate !== d.date && d.photos.length ? d.photoDate : undefined, ratings: d.ratings, adherence: d.adherence.status === 'plan' ? undefined : d.adherence, note: String(d.note || '').trim() || undefined, decision: { type: d.decision.type || 'keep', text: String(d.decision.text || '').trim() || undefined } };
   const target = ctx.store.day(d.date);
   if (d.date !== d.origDate && target.checkin && !(await ask({ title: `Ya hay un control el ${fmtShort(d.date)}`, text: '¿Sustituirlo por este?', ok: 'Sustituir', danger: true }))) return;
   if (d.origDate && d.origDate !== d.date) {
