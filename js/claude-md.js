@@ -2,7 +2,7 @@
 // datos como CLAUDE.md. Así, al trabajar sobre el repo, Claude sabe qué es cada fichero y cómo cambiarlo
 // sin romper nada. Cambia DATA_DOC_VERSION cuando cambie el modelo de datos.
 
-export const DATA_DOC_VERSION = 7;
+export const DATA_DOC_VERSION = 8;
 
 export const CLAUDE_MD = `# Recomp · repo de datos
 
@@ -60,6 +60,8 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 - \`kind\`: \`supplement\` o \`medication\`. Porciones: P proteína, C carbohidrato, G grasa, F fruta, L lácteo.
 - Comidas: \`meals_mode\` \`fixed\` (lista \`meals\`, cada una con \`target\` en gramos, \`portions\` o nada) o \`free\`
   (\`meals\` vacío: se añaden cada día). **No repartas** el objetivo del día entre comidas salvo que lo pida.
+- Recetas (\`recipes\` en foods.json): \`{ "id": "rec:…", "name", "items": [ingredientes en crudo], "cooked_g": 1400, "servings": 4 }\`;
+  en los días se apuntan como \`"food": "rec:…"\` con los gramos cocinados que se sirven.
 - Comidas guardadas: \`{ "id": "m:…", "name": "Desayuno de siempre", "items": [ …mismo formato que en los días… ] }\`.
   Un registro con \`"quick": true\` es un «añadido rápido» (solo cifras, \`g\` = 100 y \`per100\` = los totales).
 - En los días, un alimento puede llevar \`unit\` \`{ "name": "pastilla", "g": 5.5, "n": 4 }\` (\`g\` del registro = n × g).

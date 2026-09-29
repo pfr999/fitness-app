@@ -8,7 +8,7 @@ const ASSETS = [
   'js/theme.js', 'js/app.js', 'js/dates.js', 'js/model.js', 'js/demo.js', 'js/photos.js', 'js/summary.js', 'js/plan-io.js', 'js/claude-md.js',
   'js/engine/trend.js', 'js/engine/energy.js', 'js/engine/body.js', 'js/engine/targets.js', 'js/engine/analysis.js',
   'js/data/idb.js', 'js/data/github.js', 'js/data/local.js', 'js/data/store.js',
-  'js/ui/ui.js', 'js/ui/charts.js', 'js/ui/rest.js', 'js/foods/search.js', 'js/foods/db.js', 'js/foods/history.js', 'js/foods/scanner.js', 'js/training/catalog.js', 'js/engine/training.js', 'js/engine/week.js', 'js/engine/meso.js', 'js/screens/semana.js',
+  'js/ui/ui.js', 'js/ui/charts.js', 'js/ui/rest.js', 'js/foods/search.js', 'js/foods/db.js', 'js/foods/history.js', 'js/foods/recipes.js', 'js/foods/scanner.js', 'js/training/catalog.js', 'js/engine/training.js', 'js/engine/week.js', 'js/engine/meso.js', 'js/screens/semana.js',
   'js/screens/setup.js', 'js/screens/hoy.js', 'js/screens/meals.js', 'js/screens/workout.js', 'js/screens/exercises.js', 'js/screens/control.js', 'js/screens/progreso.js', 'js/screens/plan.js', 'js/screens/settings.js',
 ];
 

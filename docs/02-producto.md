@@ -112,3 +112,6 @@ Ver `docs/05-investigacion-apps.md` para el porqué.
 - **Progreso:** gasto con confianza y porqué, balance de 30 días, línea de objetivo, fotos lado a lado /
   deslizar / superponer, constancia de 26 semanas.
 - **Semana:** control rápido de 3 pasos cuando no hay incidencias.
+- **v1.4:** mesociclos (Plan → Rutina: semanas con RIR objetivo y descarga; Entreno te dice qué toca),
+  recetas con peso cocinado (Añadir → «+ Receta» o ⋯ de una comida), fotos sin conexión, estado de
+  guardado solo si hay problema y ritmo objetivo según sexo.

@@ -3,6 +3,7 @@
 // a Open Food Facts solo cuando el usuario lo pide o al escanear un código que no está.
 
 import { buildIndex, search } from './search.js';
+import { recipeFood } from './recipes.js';
 
 let main = null; // {items, index, byId, byEan}
 let loading = null;
@@ -30,7 +31,10 @@ export const isLoaded = () => !!main;
 
 /** Alimentos propios y recetas del usuario como items buscables. */
 export function customItems(foodsDoc) {
-  return (foodsDoc?.custom || []).map((x) => ({ ...x, src: 'mine' }));
+  return [
+    ...(foodsDoc?.custom || []).map((x) => ({ ...x, src: 'mine' })),
+    ...(foodsDoc?.recipes || []).filter((r) => r.items?.length).map(recipeFood),
+  ];
 }
 
 /** Busca en propios + base estática. */

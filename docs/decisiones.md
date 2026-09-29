@@ -80,4 +80,4 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 | 75 | 2026-09-29 | Ritmo automático según sexo: en mujeres, cortes de % graso +9 puntos (22 / 29) | Más grasa esencial en mujeres (~12 % vs ~3 %) | Mismos cortes |
 | 76 | 2026-09-29 | Fotos sin conexión: se guardan en el móvil y se suben solas | Los datos ya funcionaban sin red; las fotos no | Pedir repetir la foto |
 | 77 | 2026-09-29 | Mesociclo en la rutina (`routine.meso`): semanas de carga con RIR objetivo y descarga final (mitad de series, −10 % peso, RPE 6); las semanas de descarga no sirven de referencia | Estructura de bloques tipo RP sin rigidez: todo editable | Progresión sin bloques |
-
+| 78 | 2026-09-29 | Recetas con peso cocinado: ingredientes en crudo + peso final (+ raciones); se apuntan pesando lo que te sirves | Cocinar para varios días sin recalcular cada táper | Apuntar ingredientes cada día |
