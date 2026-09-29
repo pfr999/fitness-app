@@ -156,6 +156,7 @@ function render() {
   const screen = SCREENS[tab];
   main.innerHTML = screen.render(ctx);
   screen.bind?.(main, ctx);
+  document.body.dataset.booted = '1'; // para js/boot.js: la app se ha pintado
 }
 
 /** El estado de guardado solo se enseña cuando hay algo que contar (sin conexión o error). */
@@ -281,6 +282,7 @@ function init() {
     $('#eyebrow').textContent = fmtLong(todayISO());
     const main = $('#main');
     main.innerHTML = setup.render();
+    document.body.dataset.booted = '1';
     setup.bind(main, { onReady: (settings) => { saveSettings(settings); start(settings); } });
   }
 }
