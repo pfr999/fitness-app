@@ -102,3 +102,30 @@ test('sync solo descarga meses cuyo sha cambió', async () => {
   assert.equal(gets, 0, 'segunda vez: nada ha cambiado, no se descarga nada');
   assert.equal(r.allDays()['2026-08-01'].weight, 100);
 });
+
+test('sin conexión: los cambios y las fotos esperan en el móvil y se suben al volver la red', async () => {
+  const { NetworkError } = await import('../js/data/github.js');
+  class Flaky extends MemBackend {
+    constructor() { super(); this.offline = false; this.bin = new Map(); }
+    async putText(...a) { if (this.offline) throw new NetworkError('sin red'); return super.putText(...a); }
+    async putBinary(path, bytes) { if (this.offline) throw new NetworkError('sin red'); this.bin.set(path, bytes); return { sha: 'b1' }; }
+    async getBinary(path) { return this.bin.has(path) ? { bytes: this.bin.get(path), sha: 'b1' } : null; }
+  }
+  const be = new Flaky();
+  const st = new Store(be, { ns: 't-off' });
+  await st.ensureStructure();
+  be.offline = true;
+  st.updateDay('2026-09-29', (d) => { d.weight = 84.1; }, 'Peso');
+  const up = await st.putPhoto('fotos/2026-09-29/front.jpg', new Uint8Array([1, 2, 3]), 'Foto');
+  assert.equal(up, false, 'la foto queda pendiente');
+  await st.flush();
+  assert.equal(st.status, 'offline');
+  assert.equal(st.day('2026-09-29').weight, 84.1, 'el dato se ve igual sin conexión');
+  assert.deepEqual([...await st.getPhoto('fotos/2026-09-29/front.jpg')], [1, 2, 3], 'la foto se ve desde el móvil');
+  be.offline = false;
+  await st.flush();
+  assert.equal(st.status, 'idle');
+  assert.ok(be.files.has('days/2026-09.json'));
+  assert.ok(be.bin.has('fotos/2026-09-29/front.jpg'));
+  clearTimeout(st.timer);
+});

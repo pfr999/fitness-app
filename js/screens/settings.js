@@ -76,10 +76,10 @@ export function openSettings(ctx, { saveSettings, setTheme, getTheme }) {
         location.reload();
       });
       $('#sLogout', sh).addEventListener('click', async () => {
-        if (!(await ask({ title: '¿Desconectar este dispositivo?', text: ctx.store.pending.size ? 'Hay cambios sin subir y se perderán. Tus datos en GitHub no se tocan.' : 'Se borra el token y la caché de este móvil. Tus datos en GitHub no se tocan.', ok: 'Desconectar', danger: true }))) return;
+        if (!(await ask({ title: '¿Desconectar este dispositivo?', text: ctx.store.pending.size || ctx.store.photoQ?.size ? 'Hay cambios sin subir y se perderán. Tus datos en GitHub no se tocan.' : 'Se borra el token y la caché de este móvil. Tus datos en GitHub no se tocan.', ok: 'Desconectar', danger: true }))) return;
         await ctx.store.flush();
         const ns = s.mode === 'demo' ? 'demo' : `${s.owner}/${s.repo}`;
-        for (const pre of ['doc:', 'pending:', 'photo:']) for (const k of await idb.keys(`${pre}${ns}:`)) await idb.del(k);
+        for (const pre of ['doc:', 'pending:', 'photo:', 'photoq:']) for (const k of await idb.keys(`${pre}${ns}:`)) await idb.del(k);
         saveSettings(null);
         location.reload();
       });

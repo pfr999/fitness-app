@@ -193,9 +193,9 @@ export function bind(root, ctx) {
       const bytes = await processPhoto(file);
       const path = FILES.photo(d.photoDate, pose);
       forgetPhoto(path);
-      await ctx.store.putPhoto(path, bytes, `Foto ${POSES.find((p) => p.id === pose)?.label.toLowerCase()} ${fmtShort(d.date)}`);
+      const up = await ctx.store.putPhoto(path, bytes, `Foto ${POSES.find((p) => p.id === pose)?.label.toLowerCase()} ${fmtShort(d.date)}`);
       if (!d.photos.includes(pose)) d.photos.push(pose);
-      toast('Foto guardada');
+      toast(up ? 'Foto guardada' : 'Sin conexión: foto guardada en el móvil, se subirá sola');
     } catch (e) {
       toast('No se pudo subir la foto');
       console.error(e);

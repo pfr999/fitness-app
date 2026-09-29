@@ -11,6 +11,7 @@ import { FILES, emptyDocs, monthKey } from '../model.js';
 
 const CACHE = 'doc:';
 const PENDING = 'pending:';
+const PHOTOQ = 'photoq:'; // fotos hechas sin conexión, por subir
 const DEBOUNCE_MS = 4000;
 
 export class Store extends EventTarget {
@@ -20,6 +21,7 @@ export class Store extends EventTarget {
     this.ns = ns;
     this.docs = new Map(); // path → {data, sha}
     this.pending = new Map(); // path → {mutators:[fn], messages:[str]}
+    this.photoQ = new Map(); // path → message (fotos por subir)
     this.timer = null;
     this.status = 'idle'; // idle | pending | saving | error | offline
     this.lastError = null;
@@ -58,7 +60,8 @@ export class Store extends EventTarget {
       const p = await idb.get(k);
       this.pending.set(path, { mutators: [], messages: p.messages, orphan: true });
     }
-    if (this.pending.size) this.schedule(500);
+    for (const k of await idb.keys(this.key(PHOTOQ, ''))) this.photoQ.set(k.slice(this.key(PHOTOQ, '').length), (await idb.get(k))?.message || '');
+    if (this.pending.size || this.photoQ.size) this.schedule(500);
     return this.docs.size > 0;
   }
 
@@ -157,10 +160,16 @@ export class Store extends EventTarget {
   /** Sube todo lo pendiente ya (al cambiar de pantalla o cerrar). */
   async flush() {
     clearTimeout(this.timer);
-    if (!this.pending.size || this.flushing) return this.flushing;
+    if ((!this.pending.size && !this.photoQ.size) || this.flushing) return this.flushing;
     this.setStatus('saving');
     this.flushing = (async () => {
       try {
+        for (const [path, message] of [...this.photoQ]) {
+          const local = await idb.get(this.key('photo:', path));
+          if (local?.bytes) await this.uploadPhoto(path, local.bytes, message);
+          this.photoQ.delete(path);
+          await idb.del(this.key(PHOTOQ, path));
+        }
         for (const [path, p] of [...this.pending]) {
           await this.pushOne(path, p);
           // si durante la subida entraron más cambios, se quedan para la siguiente
@@ -204,18 +213,34 @@ export class Store extends EventTarget {
 
   // ---------- binarios (fotos) ----------
 
+  /**
+   * Guarda una foto. Sin conexión se queda en el móvil (se ve igual) y se sube sola al volver la red.
+   * @returns {Promise<boolean>} true si ya está subida; false si quedó pendiente.
+   */
   async putPhoto(path, bytes, message) {
-    let existing = null;
+    await idb.set(this.key('photo:', path), { bytes, sha: null });
+    try {
+      await this.uploadPhoto(path, bytes, message);
+      return true;
+    } catch (e) {
+      if (!(e instanceof NetworkError)) throw e;
+      this.photoQ.set(path, message);
+      await idb.set(this.key(PHOTOQ, path), { message });
+      this.setStatus('offline', e);
+      this.schedule(15000);
+      return false;
+    }
+  }
+
+  async uploadPhoto(path, bytes, message) {
     try {
       const { sha } = await this.backend.putBinary(path, bytes, null, message);
       await idb.set(this.key('photo:', path), { bytes, sha });
-      return sha;
     } catch (e) {
       if (!(e instanceof ConflictError)) throw e;
-      existing = await this.backend.getBinary(path);
+      const existing = await this.backend.getBinary(path);
       const { sha } = await this.backend.putBinary(path, bytes, existing?.sha, message);
       await idb.set(this.key('photo:', path), { bytes, sha });
-      return sha;
     }
   }
 
