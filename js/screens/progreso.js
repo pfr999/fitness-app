@@ -2,8 +2,8 @@
 
 import { $, $$, esc, fmt, fmtK, signed, openSheet, bindSeg, icon, alertBox } from '../ui/ui.js';
 import { timeChart } from '../ui/charts.js';
-import { addDays, fmtShort, weekStart } from '../dates.js';
-import { FILES, POSES, planFor, checkinPhotoPath, kcalTarget, dietStatus } from '../model.js';
+import { addDays, fmtShort, weekStart, range } from '../dates.js';
+import { FILES, POSES, planFor, checkinPhotoPath, kcalTarget, dietStatus, sumItems, DEFAULT_METRICS } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
 import { rollingMean, whtrCategory, MDC } from '../engine/body.js';
 import { hydratePhotos } from '../photos.js';
@@ -157,6 +157,10 @@ export function render(ctx) {
       ${view}</div>`;
   }
 
+  const allMeasures = allMeasuresCard(ctx, a);
+  const compare = compareCard(ctx, a, st);
+  const monthly = monthCard(ctx, a, st);
+
   // Constancia: 26 semanas, un cuadro por día (peso · día validado · entreno marcado)
   const days0 = ctx.store.allDays();
   const hStart = weekStart(addDays(today, -7 * 25));
@@ -204,7 +208,10 @@ export function render(ctx) {
     <div class="card"><div class="ch"><h2>Medidas</h2><div class="seg" id="compSeg" style="width:180px"><button data-v="waist" class="${st.comp === 'waist' ? 'on' : ''}">Cintura</button><button data-v="sum" class="${st.comp === 'sum' ? 'on' : ''}">Σ pliegues</button></div></div>
       ${compChart}
       ${rows.length >= 2 ? `<div class="legend"><span><i style="background:var(--accent)"></i>Media de 3 controles</span><span><i class="dot" style="background:var(--dot)"></i>Medida</span><span><i style="background:var(--accent-band);height:8px"></i>Margen de error</span></div>` : ''}</div>
+    ${allMeasures}
     ${comp}
+    ${compare}
+    ${monthly}
     ${volume}
     ${strength}
     ${photos}
@@ -218,6 +225,9 @@ export function bind(root, ctx) {
   bindSeg(root, '#compSeg', (v) => { st.comp = v; ctx.render(); });
   bindSeg(root, '#poseSeg', (v) => { st.pose = v; ctx.render(); });
   bindSeg(root, '#phMode', (v) => { st.phMode = v; ctx.render(); });
+  $('#cmpA', root)?.addEventListener('change', (e) => { st.cmpA = e.target.value; ctx.render(); });
+  $('#cmpB', root)?.addEventListener('change', (e) => { st.cmpB = e.target.value; ctx.render(); });
+  $('#monthSel', root)?.addEventListener('change', (e) => { st.month = e.target.value; ctx.render(); });
   const c2 = $('#cmp2', root);
   if (c2?.classList.contains('slide')) {
     const move = (e) => { const r = c2.getBoundingClientRect(); st.px = Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100)); c2.style.setProperty('--x', `${st.px}%`); };
@@ -229,6 +239,140 @@ export function bind(root, ctx) {
   $('#phB', root)?.addEventListener('change', (e) => { st.b = e.target.value; ctx.render(); });
   $$('[data-fx]', root).forEach((b) => b.addEventListener('click', () => formulasSheet(ctx)));
   hydratePhotos(root, ctx.store);
+}
+
+// ---------------------------------------------------------------- todas las medidas
+function allMeasuresCard(ctx, a) {
+  const metrics = (ctx.store.get(FILES.config)?.metrics || DEFAULT_METRICS);
+  const tiles = metrics.map((m) => {
+    const grp = m.group === 'skinfold' ? 'skinfolds' : 'measures';
+    const pts = a.checkins.map((c) => ({ d: c.date, v: c.checkin?.[grp]?.[m.id] })).filter((x) => x.v != null);
+    if (!pts.length) return '';
+    const last = pts[pts.length - 1].v, first = pts[0].v, dv = last - first;
+    const good = m.id === 'arm' || m.id === 'thigh' ? dv >= 0 : dv <= 0; // brazo/muslo: subir suele ser bueno
+    return `<div class="mt"><span class="l">${esc(m.label)}</span><b class="num">${fmt(last)} <small>${esc(m.unit)}</small></b>
+      ${pts.length > 1 ? `<span class="d num" style="color:${Math.abs(dv) < 0.05 ? 'var(--ink-3)' : good ? 'var(--accent)' : 'var(--slate)'}">${signed(dv)} desde ${fmtShort(pts[0].d)}</span>${sparkline(pts.map((x) => x.v), { w: 120, h: 26, color: good ? 'var(--accent)' : 'var(--slate)' })}` : '<span class="d muted">una medida</span>'}</div>`;
+  }).filter(Boolean);
+  if (!tiles.length) return '';
+  return `<div class="card"><div class="ch"><h2>Todas las medidas</h2><span class="aux">${a.checkins.length} controles</span></div><div class="mtiles">${tiles.join('')}</div></div>`;
+}
+
+// ---------------------------------------------------------------- comparar dos datos (medias semanales)
+const SERIES = {
+  peso: ['Peso (tendencia)', 'kg', 1],
+  cintura: ['Cintura', 'cm', 1],
+  kcal: ['Kcal (media)', 'kcal', 0],
+  prot: ['Proteína (media)', 'g', 0],
+  gasto: ['Gasto estimado', 'kcal', 0],
+  pasos: ['Pasos (media)', '', 0],
+  sueno: ['Sueño (media)', 'h', 1],
+  series: ['Series de la semana', '', 0],
+};
+function weeklySeries(ctx, a, key, weeks) {
+  const days = ctx.store.allDays();
+  const idx = new Map(a.span.map((d, i) => [d, i]));
+  return weeks.map((w) => {
+    const ds = range(w, addDays(w, 6)).filter((d) => d <= ctx.today());
+    const vals = ds.map((d) => {
+      const x = days[d] || {}, i = idx.get(d);
+      if (key === 'peso') return i != null ? a.trend[i]?.level ?? null : null;
+      if (key === 'cintura') return x.checkin?.measures?.waist ?? null;
+      if (key === 'kcal') return i != null && !a.intakes[i]?.assumed ? a.intakes[i]?.kcal ?? null : null; // solo días apuntados o validados
+      if (key === 'prot') return x.meals?.length ? sumItems(x.meals.flatMap((m) => m.items)).p : null;
+      if (key === 'gasto') return i != null && a.tdee[i]?.ready ? a.tdee[i].E : null;
+      if (key === 'pasos') return x.steps ?? null;
+      if (key === 'sueno') return x.sleep_h ?? null;
+      if (key === 'series') return (x.session?.sets || []).filter((s) => !s.warmup).length;
+      return null;
+    }).filter((v) => v != null);
+    if (!vals.length) return null;
+    return key === 'series' ? vals.reduce((p, q) => p + q, 0) : vals.reduce((p, q) => p + q, 0) / vals.length;
+  });
+}
+function pearson(xs, ys) {
+  const pts = xs.map((x, i) => [x, ys[i]]).filter(([x, y]) => x != null && y != null);
+  if (pts.length < 4) return null;
+  const n = pts.length, mx = pts.reduce((p, [x]) => p + x, 0) / n, my = pts.reduce((p, [, y]) => p + y, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (const [x, y] of pts) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; }
+  return sxx && syy ? { r: sxy / Math.sqrt(sxx * syy), n } : null;
+}
+function compareCard(ctx, a, st) {
+  const A = st.cmpA || 'peso', B = st.cmpB || 'kcal';
+  const nW = Math.max(8, Math.ceil((st.range || 182) / 7));
+  const weeks = Array.from({ length: nW }, (_, i) => addDays(weekStart(ctx.today()), -7 * (nW - 1 - i)));
+  const ya = weeklySeries(ctx, a, A, weeks), yb = weeklySeries(ctx, a, B, weeks);
+  const sel = (id, v) => `<select class="inp sm" id="${id}">${Object.entries(SERIES).map(([k, [l]]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const W = 360, H = 176, pl = 40, pr = 40, pt = 20, pb = 24;
+  const X = (i) => pl + (i / Math.max(1, nW - 1)) * (W - pl - pr);
+  const line = (ys, color, side) => {
+    const v = ys.filter((y) => y != null);
+    if (v.length < 2) return '';
+    let lo = Math.min(...v), hi = Math.max(...v); if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+    const Y = (y) => pt + ((hi - y) / (hi - lo)) * (H - pt - pb);
+    const d = ys.map((y, i) => (y == null ? null : `${X(i).toFixed(1)} ${Y(y).toFixed(1)}`)).filter(Boolean).join(' L');
+    const dec = SERIES[side === 'l' ? A : B][2];
+    const lab = (y) => `<text x="${side === 'l' ? pl - 5 : W - pr + 5}" y="${Y(y) + 3.5}" font-size="10" font-weight="700" fill="${color}" text-anchor="${side === 'l' ? 'end' : 'start'}">${fmt(y, dec)}</text>`;
+    return `<path d="M${d}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>${ys.map((y, i) => (y == null ? '' : `<circle cx="${X(i)}" cy="${Y(y)}" r="2.6" fill="${color}"/>`)).join('')}${lab(hi)}${lab(lo)}`;
+  };
+  const cor = pearson(ya, yb);
+  const txt = cor ? (() => { const r = cor.r, abs = Math.abs(r); const f = abs < 0.3 ? 'apenas se relacionan' : abs < 0.6 ? `se relacionan de forma moderada (${r > 0 ? 'suben juntos' : 'cuando uno sube, el otro baja'})` : `se relacionan bastante (${r > 0 ? 'suben juntos' : 'cuando uno sube, el otro baja'})`; return `En estas ${cor.n} semanas ${f}: r = ${fmt(r, 2)}. Relación no es causa, y con pocas semanas puede ser casualidad.`; })() : 'Hacen falta al menos 4 semanas con los dos datos.';
+  return `<div class="card"><div class="ch"><h2>Comparar dos datos</h2><span class="aux">medias por semana</span></div>
+    <div class="g2" style="margin-bottom:10px"><div class="cmpsel" style="--c:var(--accent)">${sel('cmpA', A)}</div><div class="cmpsel" style="--c:var(--blue)">${sel('cmpB', B)}</div></div>
+    <svg class="chart" viewBox="0 0 ${W} ${H}">${line(ya, 'var(--accent)', 'l')}${line(yb, 'var(--blue)', 'r')}
+      <text x="${pl}" y="${H - 5}" font-size="10" fill="var(--ink-3)" font-weight="600">${fmtShort(weeks[0])}</text><text x="${W - pr}" y="${H - 5}" font-size="10" fill="var(--ink-3)" font-weight="600" text-anchor="end">esta semana</text></svg>
+    <div class="muted small" style="margin-top:6px">${txt}</div></div>`;
+}
+
+// ---------------------------------------------------------------- resumen del mes
+const MONTHS_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function monthCard(ctx, a, st) {
+  const days = ctx.store.allDays();
+  const today = ctx.today();
+  const months = [...new Set(Object.keys(days).filter((d) => d <= today).map((d) => d.slice(0, 7)))].sort().reverse().slice(0, 12);
+  if (!months.length) return '';
+  const def = +today.slice(8) < 8 && months[1] ? months[1] : months[0];
+  const M = st.month && months.includes(st.month) ? st.month : def;
+  const ds = Object.keys(days).filter((d) => d.startsWith(M) && d <= today).sort();
+  const idx = new Map(a.span.map((d, i) => [d, i]));
+  const tr = ds.map((d) => a.trend[idx.get(d)]?.level).filter((x) => x != null);
+  const waist = ds.map((d) => days[d]?.checkin?.measures?.waist).filter((x) => x != null);
+  const valid = ds.filter((d) => { const x = dietStatus(days[d]); return x && x.status !== 'unknown'; }).length;
+  const nDays = ds.length ? +ds[ds.length - 1].slice(8) : 0;
+  const kc = ds.map((d) => a.intakes[idx.get(d)]).filter((x) => x && x.kcal != null && !x.assumed).map((x) => x.kcal);
+  const pr = ds.filter((d) => days[d]?.meals?.length).map((d) => sumItems(days[d].meals.flatMap((m) => m.items)).p);
+  const sess = ds.filter((d) => days[d]?.trained === true).length;
+  const sets = ds.reduce((p, d) => p + (days[d]?.session?.sets || []).filter((x) => !x.warmup).length, 0);
+  const steps = ds.map((d) => days[d]?.steps).filter((x) => x != null);
+  const sleep = ds.map((d) => days[d]?.sleep_h).filter((x) => x != null);
+  // récords: series que superan el mejor peso anterior a esas mismas repeticiones
+  const best = new Map();
+  let prs = 0;
+  for (const d of Object.keys(days).sort()) {
+    if (d > today) break;
+    for (const x of days[d]?.session?.sets || []) {
+      if (x.warmup || !(x.reps > 0) || x.kg == null) continue;
+      const k = `${x.ex || String(x.name).toLowerCase()}|${x.reps}`;
+      const b = best.get(k);
+      if (b != null && x.kg > b && d.startsWith(M)) prs++;
+      if (b == null || x.kg > b) best.set(k, x.kg);
+    }
+  }
+  const avg = (v) => (v.length ? v.reduce((p, q) => p + q, 0) / v.length : null);
+  const tile = (l, v, sub = '') => `<div class="ms"><span>${l}</span><b class="num">${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const [y, m] = M.split('-');
+  return `<div class="card"><div class="ch"><h2>Resumen del mes</h2><select class="inp sm" id="monthSel" style="width:auto">${months.map((x) => `<option value="${x}" ${x === M ? 'selected' : ''}>${MONTHS_L[+x.slice(5) - 1]} ${x.slice(0, 4)}</option>`).join('')}</select></div>
+    <div class="mstats">
+      ${tile('Peso (tendencia)', tr.length > 1 ? `${signed(tr[tr.length - 1] - tr[0])} kg` : '—', tr.length ? `${fmt(tr[0])} → ${fmt(tr[tr.length - 1])}` : '')}
+      ${tile('Cintura', waist.length > 1 ? `${signed(waist[waist.length - 1] - waist[0])} cm` : waist.length ? `${fmt(waist[0])} cm` : '—', waist.length > 1 ? `${fmt(waist[0])} → ${fmt(waist[waist.length - 1])}` : '')}
+      ${tile('Días validados', `${valid} de ${nDays}`)}
+      ${tile('Kcal media', kc.length ? fmtK(avg(kc)) : '—', kc.length ? `${kc.length} días registrados` : 'sin días registrados')}
+      ${tile('Proteína media', pr.length ? `${fmtK(avg(pr))} g` : '—')}
+      ${tile('Sesiones', String(sess), `${sets} series`)}
+      ${tile('Récords', String(prs), 'por repeticiones')}
+      ${tile('Pasos · sueño', `${steps.length ? fmtK(avg(steps)) : '—'} · ${sleep.length ? fmt(avg(sleep)) + ' h' : '—'}`)}
+    </div>
+    <div class="muted small" style="margin-top:8px">${MONTHS_L[+m - 1][0].toUpperCase() + MONTHS_L[+m - 1].slice(1)} de ${y}.</div></div>`;
 }
 
 function formulasSheet(ctx) {

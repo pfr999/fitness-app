@@ -118,3 +118,6 @@ Ver `docs/05-investigacion-apps.md` para el porqué.
 - **v1.5:** Plan → Recetas (recetas con preparación, comidas guardadas y Mis alimentos, fuera del día);
   al apuntar una receta, «un plato» o «por ingredientes»; «Desglosar en ingredientes» en un plato ya
   apuntado; «Lo que más aporta» en Comidas.
+- **v1.5.1:** Progreso con «Todas las medidas» (cada medida del control con su evolución), «Comparar dos
+  datos» (medias semanales de dos series a elegir, con su correlación y la advertencia de que no es causa)
+  y «Resumen del mes».
