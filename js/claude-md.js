@@ -2,7 +2,7 @@
 // datos como CLAUDE.md. Así, al trabajar sobre el repo, Claude sabe qué es cada fichero y cómo cambiarlo
 // sin romper nada. Cambia DATA_DOC_VERSION cuando cambie el modelo de datos.
 
-export const DATA_DOC_VERSION = 4;
+export const DATA_DOC_VERSION = 5;
 
 export const CLAUDE_MD = `# Recomp · repo de datos
 
@@ -69,7 +69,8 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 \`session\` \`{ "day": "Día 2", "sets": [ { "name", "ex", "i", "kg", "reps", "rpe" } ] }\`,
 \`meals\` \`[ { "slot", "items": [ { "name", "brand", "g", "per100": { "kcal", "p", "c", "f" } } ] } ]\`,
 \`diet\` \`{ "status": "logged|plan|over|under|unknown", "kcal_delta" }\` (validación del día),
-\`supplements_taken\`, y en el día del control semanal \`checkin\` (medidas, pliegues, fotos, valoraciones,
+\`supplements_taken\`, \`hidden_meals\` (comidas fijas del plan ocultas ese día), \`meal_order\` (orden de las comidas
+ese día), y en el día del control semanal \`checkin\` (medidas, pliegues, fotos, valoraciones,
 autorregulación por músculo, nota, decisión).
 
 ## Cómo interpreta la app los datos (para tus análisis)

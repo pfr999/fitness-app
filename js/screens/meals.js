@@ -26,9 +26,15 @@ export function mealPlan(v) {
 export function slotsFor(ctx, v, date) {
   const { mode, list } = mealPlan(v);
   const day = ctx.store.day(date);
-  const planned = mode === 'fixed' ? list.map((m) => m.slot) : [];
+  const hidden = new Set(day.hidden_meals || []);
+  // las comidas fijas vacías solo se muestran hoy (y en adelante); en días pasados, solo lo apuntado
+  const planned = mode === 'fixed' && date >= ctx.today() ? list.map((m) => m.slot).filter((sl) => !hidden.has(sl)) : [];
   const logged = (day.meals || []).filter((m) => m.items?.length).map((m) => m.slot);
-  return [...new Set([...planned, ...logged, ...(ctx.state.extraMeals?.[date] || [])])];
+  const all = [...new Set([...planned, ...logged, ...(ctx.state.extraMeals?.[date] || [])])];
+  // orden propio del día (se guarda al renombrar) para que una comida no salte de sitio
+  const order = day.meal_order || [];
+  const pos = (x) => { const i = order.indexOf(x); return i < 0 ? order.length + all.indexOf(x) : i; };
+  return order.length ? all.sort((a, b) => pos(a) - pos(b)) : all;
 }
 
 /** Objetivo propio de una comida (si el plan se lo pone). */
@@ -74,7 +80,8 @@ export function render(ctx) {
     const y = mealOf(ctx.store.day(addDays(date, -1)), slot);
     const porChips = por && Object.keys(por).length ? `<div class="por" style="justify-content:flex-start;margin-bottom:6px">${Object.entries(por).filter(([, n]) => n).map(([k2, n]) => `<span class="${esc(k2)}">${esc(n)}${esc(k2)}</span>`).join('')}</div>` : '';
     return `<div class="card mc">
-      <div class="ch"><h2>${esc(slot)}</h2><span class="aux num">${fmtK(s.kcal)}${tg ? ` / ${fmtK(tg.kcal)}` : ''} kcal</span></div>
+      <div class="ch"><h2 style="display:flex;align-items:center;gap:6px">${esc(slot)}<button class="mini" data-rename="${esc(slot)}" aria-label="Cambiar nombre de ${esc(slot)}" style="width:30px;height:30px">${icon.edit}</button></h2>
+        <span style="display:flex;align-items:center;gap:8px"><span class="aux num">${fmtK(s.kcal)}${tg ? ` / ${fmtK(tg.kcal)}` : ''} kcal</span><button class="mini danger" data-rmmeal="${esc(slot)}" aria-label="Quitar ${esc(slot)} de este día" style="width:30px;height:30px">${icon.trash}</button></span></div>
       ${tg ? `<div class="mc-sub"><span>P <b>${fmtK(s.p)}</b>/${fmtK(tg.p)}</span><span>C <b>${fmtK(s.c)}</b>/${fmtK(tg.c)}</span><span>G <b>${fmtK(s.f)}</b>/${fmtK(tg.f)} g</span></div>`
         : m.items.length ? `<div class="mc-sub"><span>P <b>${fmtK(s.p)}</b></span><span>C <b>${fmtK(s.c)}</b></span><span>G <b>${fmtK(s.f)}</b> g</span></div>` : ''}
       ${porChips}
@@ -104,6 +111,8 @@ export function bind(root, ctx) {
   if (!isLoaded()) loadFoods().catch(() => {});
   $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => addSheet(ctx, date, b.dataset.add)));
   $('#addMeal', root)?.addEventListener('click', () => newMealSheet(ctx, date));
+  $$('[data-rmmeal]', root).forEach((b) => b.addEventListener('click', () => removeMeal(ctx, date, b.dataset.rmmeal)));
+  $$('[data-rename]', root).forEach((b) => b.addEventListener('click', () => renameMealSheet(ctx, date, b.dataset.rename)));
   $$('[data-copy]', root).forEach((b) => b.addEventListener('click', () => {
     const slot = b.dataset.copy;
     const y = mealOf(ctx.store.day(addDays(date, -1)), slot);
@@ -171,6 +180,57 @@ function unitsOf(food) {
   const pkg = packageGrams(food.qty);
   if (pkg && !out.some((u) => u.g === pkg)) out.push({ name: 'envase', g: pkg });
   return out;
+}
+
+// ---------------------------------------------------------------- quitar / renombrar una comida del día
+const isPlanned = (ctx, date, slot) => mealPlan(planFor(ctx.store.get(FILES.plan), date)).list.some((m) => m.slot === slot);
+const dropExtra = (ctx, date, slot) => { const l = ctx.state.extraMeals?.[date]; if (l) ctx.state.extraMeals[date] = l.filter((x) => x !== slot); };
+
+function removeMeal(ctx, date, slot) {
+  const m = mealOf(ctx.store.day(date), slot);
+  if (m.items.length && !confirm(`¿Quitar «${slot}» y ${m.items.length === 1 ? 'su alimento' : `sus ${m.items.length} alimentos`} de este día?`)) return;
+  const planned = isPlanned(ctx, date, slot);
+  if (m.items.length || planned) {
+    ctx.store.updateDay(date, (d) => {
+      setMeal(d, slot, []);
+      if (planned) d.hidden_meals = [...new Set([...(d.hidden_meals || []), slot])]; // la del plan: oculta solo este día
+    }, `${fmtShort(date)}: quita ${slot}`);
+  }
+  dropExtra(ctx, date, slot);
+  toast(`${slot} quitada`);
+  ctx.render();
+}
+
+function renameMealSheet(ctx, date, slot) {
+  openSheet(`<h3>Cambiar nombre</h3><div class="muted">Solo para este día. Los alimentos de «${esc(slot)}» pasan a la nueva.</div>
+    <div class="field" style="margin-top:12px"><label for="rnName">Nombre</label><input class="inp" id="rnName" value="${esc(slot)}" autofocus></div>
+    <div class="chipset" id="rnSug" style="margin-top:10px">${['Comida 1', 'Comida 2', 'Comida 3', 'Comida 4', 'Pre-entreno', 'Intra-entreno', 'Post-entreno', 'Snack'].filter((x) => x !== slot).map((x) => `<button type="button" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <div class="sheet-actions"><button class="btn primary" id="rnSave" style="margin-top:12px">Guardar</button></div>`, {
+    bind: (sh) => {
+      $$('#rnSug button', sh).forEach((b) => b.addEventListener('click', () => { $('#rnName', sh).value = b.dataset.v; }));
+      $('#rnName', sh).addEventListener('focus', (e) => e.target.select());
+      $('#rnSave', sh).addEventListener('click', () => {
+        const to = $('#rnName', sh).value.trim();
+        if (!to) return toast('Pon un nombre');
+        if (to === slot) return closeSheet();
+        const planned = isPlanned(ctx, date, slot);
+        const order = [...new Set(slotsFor(ctx, planFor(ctx.store.get(FILES.plan), date), date).map((x) => (x === slot ? to : x)))];
+        ctx.store.updateDay(date, (d) => {
+          d.meal_order = order;
+          const from = mealOf(d, slot), dest = mealOf(d, to);
+          setMeal(d, to, [...dest.items, ...from.items]); // si ya existe una con ese nombre, se juntan
+          setMeal(d, slot, []);
+          if (planned) d.hidden_meals = [...new Set([...(d.hidden_meals || []), slot])];
+          if (d.hidden_meals) { d.hidden_meals = d.hidden_meals.filter((x) => x !== to); if (!d.hidden_meals.length) delete d.hidden_meals; }
+        }, `${fmtShort(date)}: ${slot} → ${to}`);
+        dropExtra(ctx, date, slot);
+        if (!mealOf(ctx.store.day(date), to).items.length) ((ctx.state.extraMeals ||= {})[date] ||= []).push(to);
+        toast(`Ahora se llama «${to}»`);
+        closeSheet();
+        ctx.render();
+      });
+    },
+  });
 }
 
 // ---------------------------------------------------------------- comida nueva (del día)

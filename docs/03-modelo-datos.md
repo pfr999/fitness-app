@@ -74,6 +74,8 @@ de una serie se reconoce por `ex` (id) o, si no lo tiene, por su nombre o alias.
           "g": 120, "per100": { "kcal": 68, "p": 1.8, "c": 14.2, "f": 0.1 },
           "unit": { "name": "pastilla", "g": 5.5, "n": 4 } } ] } ],   // unit opcional: se apuntó en unidades
     "trained": true,                                    // true entreno · false descanso · ausente = sin marcar
+    "hidden_meals": ["Comida 3"],                       // comidas fijas del plan quitadas ese día
+    "meal_order": ["Comida 1", "Intra-entreno", "Comida 2"],  // orden propio del día (al renombrar)
     "meals_complete": null,                             // «día cerrado» desde Comidas (= diet logged)
     "diet": { "status": "logged|plan|over|under|unknown", "kcal_delta": 700 },  // validación del día (Hoy o revisión semanal)
     "supplements_taken": ["Creatina", "Vitamina D3"],
