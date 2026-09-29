@@ -105,3 +105,10 @@ export function ring({ value, max, label, sub }) {
     <text x="52" y="50" text-anchor="middle" font-size="20" font-weight="800" fill="var(--ink)">${label}</text>
     <text x="52" y="67" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--ink-3)">${sub}</text></svg>`;
 }
+
+/** Anillo de progreso con texto dentro (HTML). pct 0–1; más de 1 se pinta lleno. */
+export function donut({ pct, size = 104, stroke = 11, color = 'var(--accent)', big = '', sm = '', sm2 = '' }) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, p = Math.max(0, Math.min(1, pct || 0));
+  const h = size / 2;
+  return `<div class="rng" style="width:${size}px;height:${size}px"><svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${r}" fill="none" stroke="var(--sunken)" stroke-width="${stroke}"/><circle class="v" cx="${h}" cy="${h}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - p)).toFixed(1)}"/></svg><div class="c"><div class="big num">${big}</div>${sm ? `<div class="sm">${sm}</div>` : ''}${sm2 ? `<div class="sm">${sm2}</div>` : ''}</div></div>`;
+}

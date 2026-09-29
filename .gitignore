@@ -3,3 +3,4 @@ node_modules/
 *.log
 # Contiene datos personales: solo local
 docs/mock.html
+docs/mock-v1.html

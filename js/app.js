@@ -143,8 +143,10 @@ function render() {
   const { tab } = ctx.state;
   $('#tabs').hidden = false;
   $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.go === tab));
-  $('#title').textContent = TITLES[tab];
-  $('#eyebrow').textContent = fmtLong(todayISO());
+  const head = tab === 'hoy' ? hoy.dayTitle(ctx) : { title: TITLES[tab], eyebrow: fmtLong(todayISO()) };
+  $('#title').textContent = head.title;
+  $('#eyebrow').textContent = head.eyebrow;
+  $('#calBtn').hidden = tab !== 'hoy';
   const v = currentPlan(ctx.store.get(FILES.plan));
   const phase = [v?.phase && `Fase ${v.phase}`, v?.micro && `Micro ${v.micro}`, `Semana ${isoWeek(todayISO())}`].filter(Boolean).join(' · ');
   $('#phase').hidden = false;
@@ -186,7 +188,7 @@ function paintTheme() {
   const b = $('#themeBtn');
   b.innerHTML = dark ? icon.sun : icon.moon;
   b.setAttribute('aria-label', dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro');
-  document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0E1011' : '#F4F2EC');
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#111315' : '#F3F1EC');
 }
 
 // ---------- actualizaciones (service worker) ----------
@@ -248,17 +250,21 @@ function init() {
   paintTheme();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintTheme);
   $('#themeBtn').addEventListener('click', () => setTheme(effectiveDark() ? 'light' : 'dark'));
+  $('#calBtn').addEventListener('click', () => ctx.store && hoy.calendarSheet(ctx));
   $('#settingsBtn').addEventListener('click', () => ctx.store && openSettings(ctx, { saveSettings, setTheme, getTheme, THEMES }));
   $$('#tabs button').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') ctx.store?.flush(); });
   window.addEventListener('online', () => ctx.store?.flush());
   initServiceWorker();
 
-  // Atajos de URL: #demo abre el modo demo; #hoy, #domingo, #progreso, #plan abren esa pestaña.
+  // Atajos de URL: #demo abre el modo demo; #hoy, #domingo, #progreso, #plan abren esa pestaña;
+  // #comidas y #entreno, esa parte de Hoy (los usan los accesos directos del icono de la app).
   const hash = location.hash.slice(1).split('/');
   if (hash[0] === 'demo' && !loadSettings()) saveSettings({ mode: 'demo' });
   const tabFromHash = hash.find((h) => SCREENS[h]);
   if (tabFromHash) ctx.state.tab = tabFromHash;
+  const subFromHash = hash.find((h) => h === 'comidas' || h === 'entreno');
+  if (subFromHash) Object.assign(ctx.state, { tab: 'hoy', hoySub: subFromHash });
 
   const s = loadSettings();
   if (s) start(s);

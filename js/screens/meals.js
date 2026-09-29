@@ -2,7 +2,7 @@
 // alimentos propios, escáner de código de barras y botón «Día completo».
 
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon, bindSeg, ask } from '../ui/ui.js';
-import { ring } from '../ui/charts.js';
+import { donut } from '../ui/charts.js';
 import { addDays, fmtShort } from '../dates.js';
 import { FILES, planFor, kcalTarget, sumItems } from '../model.js';
 import { loadFoods, isLoaded, findFoods, frequentFoods, byEan, byId, lookupBarcodeOnline, searchOnline, macrosFor, packageGrams } from '../foods/db.js';
@@ -48,7 +48,7 @@ function mealTarget(v, slot) {
 }
 const mealPortions = (v, slot) => (v?.diet?.meals || []).find((x) => x.slot === slot)?.portions || null;
 
-function targets(v, trained) {
+export function dayTargets(v, trained) {
   const kcal = kcalTarget(v, trained);
   const d = v.diet;
   // los macros del plan son los del día de entreno: se escalan en días de descanso
@@ -64,7 +64,7 @@ export function render(ctx) {
   const v = planFor(ctx.store.get(FILES.plan), date);
   if (!v) return '';
   const day = ctx.store.day(date);
-  const t = targets(v, day.trained);
+  const t = dayTargets(v, day.trained);
   const slots = slotsFor(ctx, v, date);
   const { mode } = mealPlan(v);
   const all = sumItems((day.meals || []).flatMap((m) => m.items));
@@ -93,8 +93,8 @@ export function render(ctx) {
   return `<div class="card">
       <div class="ch"><h2>Hoy llevas</h2><span class="badge ${day.trained === true ? 'g' : 'n'}">${label}</span></div>
       <div class="ring-wrap">
-        ${ring({ value: all.kcal, max: t.kcal, label: fmtK(all.kcal), sub: `de ${fmtK(t.kcal)} kcal` })}
-        <div class="macros">${bar('Proteína', all.p, t.p, 'var(--accent)')}${bar('Carbohidratos', all.c, t.c, 'var(--blue)')}${bar('Grasas', all.f, t.f, 'var(--amber)')}</div>
+        ${donut({ pct: t.kcal ? all.kcal / t.kcal : 0, size: 104, stroke: 10, color: all.kcal > t.kcal * 1.1 ? 'var(--amber)' : 'var(--accent)', big: fmtK(all.kcal), sm: `de ${fmtK(t.kcal)}`, sm2: 'kcal' })}
+        <div class="macros">${bar('Proteína', all.p, t.p, 'var(--blue)')}${bar('Carbohidratos', all.c, t.c, 'var(--slate)')}${bar('Grasas', all.f, t.f, 'var(--slate)')}</div>
       </div>
       ${day.trained == null ? `<div class="hint">Marca en «Día» si entrenas hoy: cambia el objetivo (entreno ${fmtK(v.diet.kcal.train)} · descanso ${fmtK(v.diet.kcal.rest)}).</div>` : ''}
     </div>
