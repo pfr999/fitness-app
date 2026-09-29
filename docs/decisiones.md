@@ -74,3 +74,4 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 | 69 | 2026-09-29 | Récords por número de reps y series W de calentamiento fuera de volumen y récords | Motiva sin falsear el volumen | Solo e1RM |
 | 70 | 2026-09-29 | Control rápido (medidas, fotos, decisión) cuando la semana no tiene incidencias; el completo sigue igual | Menos fricción sin perder el ritual | Un solo control |
 | 71 | 2026-09-29 | Gasto con confianza visible y frase de por qué cambió; balance de 30 días «¿cumplo el plan?» / «¿funciona el plan?» | Un gasto que cambia sin explicación genera desconfianza | Solo el número |
+| 72 | 2026-09-29 | Se quita «pantalla encendida» en el entreno (revisa #68) | El usuario bloquea el móvil y lo guarda entre series: no aporta | Mantenerla |

@@ -4,7 +4,7 @@
 import { $, $$, esc, fmt, num, int, toast, openSheet, closeSheet, bindSeg, icon, ask } from '../ui/ui.js';
 import { addDays, fmtShort, range } from '../dates.js';
 import { FILES, planFor, newPlanVersion } from '../model.js';
-import { startRest, stopRest, wakeSupported } from '../ui/rest.js';
+import { startRest, stopRest } from '../ui/rest.js';
 import { resolveExercise, progressionHint } from '../engine/training.js';
 import { exercisesOf, datalist, assignSheet } from './exercises.js';
 
@@ -141,7 +141,6 @@ export function render(ctx) {
   return `${days.length ? `<div class="daytabs" id="trainDays">${days.map((d) => `<button data-v="${esc(d.name)}" class="${d.name === rd.name ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>` : ''}
     <div class="card">
       <div class="ch"><h2>${esc(rd.name)}</h2><span class="aux" id="sessCount">${nWork} de ${nPlan} series</span></div>
-      ${isToday && wakeSupported() ? '<div class="awake">☀ Pantalla encendida mientras entrenas</div>' : ''}
       <div class="muted small" style="margin:-4px 0 10px">«Antes» es tu última sesión (tócalo para copiarlo). <b>✓</b> apunta lo que ves; si hiciste otra cosa, escríbelo. Toca el número para marcar una serie de calentamiento (W).</div>
       ${all.map(block).join('')}
       <button class="btn secondary sm" id="addExtra" style="width:100%;margin-top:10px">${icon.plus} Ejercicio extra</button>

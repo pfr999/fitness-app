@@ -13,7 +13,7 @@ import * as control from './screens/control.js';
 import * as progreso from './screens/progreso.js';
 import * as plan from './screens/plan.js';
 import { openSettings } from './screens/settings.js';
-import { initRest, keepAwake } from './ui/rest.js';
+import { initRest } from './ui/rest.js';
 import { seedDemo } from './screens/setup.js';
 import { CLAUDE_MD, DATA_DOC_VERSION } from './claude-md.js';
 
@@ -156,8 +156,6 @@ function render() {
   const screen = SCREENS[tab];
   main.innerHTML = screen.render(ctx);
   screen.bind?.(main, ctx);
-  // pantalla encendida solo mientras se ve el entreno de hoy
-  keepAwake(tab === 'hoy' && ctx.state.hoySub === 'entreno' && ctx.state.date === todayISO());
 }
 
 function paintSync(status, err) {

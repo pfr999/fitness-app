@@ -1,4 +1,4 @@
-// Temporizador de descanso entre series (barra fija abajo) y pantalla encendida durante el entreno.
+// Temporizador de descanso entre series (barra fija abajo).
 // Se calcula con la hora de fin, no contando ticks: sigue bien aunque el móvil congele la pestaña.
 
 let st = null;      // { end, total, label, buzzed }
@@ -50,19 +50,4 @@ export function stopRest() { st = null; save(); paint(); }
 export function initRest() {
   try { st = JSON.parse(sessionStorage.getItem('rest') || 'null'); } catch { st = null; }
   if (st) { paint(); tick = setInterval(paint, 500); }
-}
-
-// ---------- pantalla encendida (Screen Wake Lock) ----------
-let lock = null, want = false;
-async function acquire() {
-  if (!want || lock || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
-  try { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => { lock = null; }); } catch { lock = null; }
-}
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') acquire(); });
-export const wakeSupported = () => 'wakeLock' in navigator;
-/** Mantener la pantalla encendida mientras `on` (se pide al entrar en el entreno de hoy). */
-export function keepAwake(on) {
-  want = on;
-  if (on) acquire();
-  else if (lock) { lock.release().catch(() => {}); lock = null; }
 }
