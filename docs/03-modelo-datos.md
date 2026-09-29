@@ -103,8 +103,15 @@ de una serie se reconoce por `ex` (id) o, si no lo tiene, por su nombre o alias.
                 "units": [ { "name": "pastilla", "g": 5.5 } ], "qty": "200 pastillas",
                 "source": "manual|off|copia:<id original>", "ean": "" } ],
   "recipes": [ { "id": "rec:1", "name": "Mi desayuno", "items": [ { "food": "mine:1", "g": 120 } ] } ],
-  "frequent": { "off:8480000038524": 9 } }         // contador de uso para ordenar el buscador
+  "frequent": { "off:8480000038524": 9 },        // contador de uso para ordenar el buscador
+  "favorites": [ { "food": { "id": "gen:9310", "name": "Copos de avena", "per100": { … }, "units": [ … ] },
+                   "g": 80, "unit": { "name": "scoop", "g": 30, "n": 1 } } ],   // «Mis alimentos»: alimento + cantidad
+  "saved_meals": [ { "id": "m:…", "name": "Desayuno de siempre", "items": [ /* como en los días */ ] } ] }
 ```
+«Lo que sueles poner en cada comida», la última cantidad y las cantidades habituales **no se guardan**:
+se calculan con el historial de los días (`js/foods/history.js`).
+Un registro con `"quick": true` en una comida es un «añadido rápido» (solo cifras: `g` = 100 y
+`per100` = los totales).
 
 ## events.json · labs.json
 ```jsonc

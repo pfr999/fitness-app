@@ -1,13 +1,14 @@
 // Hoy → Comidas: registro de alimentos por gramos, totales por comida y día frente al objetivo,
 // alimentos propios, escáner de código de barras y botón «Día completo».
 
-import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon, bindSeg, ask } from '../ui/ui.js';
+import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, icon, bindSeg, segValue, ask, askText } from '../ui/ui.js';
 import { donut } from '../ui/charts.js';
 import { addDays, fmtShort } from '../dates.js';
 import { FILES, planFor, kcalTarget, sumItems } from '../model.js';
 import { loadFoods, isLoaded, findFoods, frequentFoods, byEan, byId, lookupBarcodeOnline, searchOnline, macrosFor, packageGrams } from '../foods/db.js';
 import { highlightTerms, norm } from '../foods/search.js';
 import { scannerSupported, startScanner } from '../foods/scanner.js';
+import { foodHistory, mealSignature, timesRepeated } from '../foods/history.js';
 
 // ---------------------------------------------------------------- comidas del plan
 /**
@@ -72,6 +73,11 @@ export function render(ctx) {
   const label = day.trained === true ? 'Día de entreno' : day.trained === false ? 'Día de descanso' : 'Entreno sin marcar';
   const bar = (l, val, tgt, col) => `<div class="mac"><div class="row"><b>${l}</b><span class="num"><b style="color:var(--ink)">${fmtK(val)}</b> / ${fmtK(tgt)} g${tgt - val > 0 ? ` · quedan ${fmtK(tgt - val)}` : ''}</span></div><div class="bar"><i style="width:${Math.min(100, (val / (tgt || 1)) * 100)}%;background:${col}"></i></div></div>`;
 
+  const allDays = ctx.store.allDays();
+  const saved = savedMealsOf(ctx);
+  const savedSigs = new Set(saved.map((x) => mealSignature(x.items)));
+  const yday = ctx.store.day(addDays(date, -1));
+  const canCopyDay = !all.kcal && (yday.meals || []).some((x) => x.items?.length);
   const cards = slots.map((slot) => {
     const m = mealOf(day, slot);
     const s = sumItems(m.items);
@@ -83,10 +89,11 @@ export function render(ctx) {
       <div class="ch"><h2 style="display:flex;align-items:center;gap:6px">${esc(slot)}<button class="mini" data-rename="${esc(slot)}" aria-label="Cambiar nombre de ${esc(slot)}" style="width:30px;height:30px">${icon.edit}</button></h2>
         <span style="display:flex;align-items:center;gap:8px"><span class="aux num">${fmtK(s.kcal)}${tg ? ` / ${fmtK(tg.kcal)}` : ''} kcal</span><button class="mini danger" data-rmmeal="${esc(slot)}" aria-label="Quitar ${esc(slot)} de este día" style="width:30px;height:30px">${icon.trash}</button></span></div>
       ${tg ? `<div class="mc-sub"><span>P <b>${fmtK(s.p)}</b>/${fmtK(tg.p)}</span><span>C <b>${fmtK(s.c)}</b>/${fmtK(tg.c)}</span><span>G <b>${fmtK(s.f)}</b>/${fmtK(tg.f)} g</span></div>`
-        : m.items.length ? `<div class="mc-sub"><span>P <b>${fmtK(s.p)}</b></span><span>C <b>${fmtK(s.c)}</b></span><span>G <b>${fmtK(s.f)}</b> g</span></div>` : ''}
+        : m.items.length ? `<div class="mc-sub"><span style="color:var(--blue)">P <b style="color:var(--blue)">${fmtK(s.p)}</b></span><span>C <b>${fmtK(s.c)}</b></span><span>G <b>${fmtK(s.f)}</b> g</span></div>` : ''}
       ${porChips}
-      ${m.items.map((it, i) => { const x = macrosFor(it.per100, it.g); const q = it.unit ? `${fmt(it.unit.n, it.unit.n % 1 ? 1 : 0)} ${esc(unitLabel(it.unit.name, it.unit.n))} · ${fmtK(it.g)} g` : `${fmtK(it.g)} g`; return `<button class="fi" data-item="${esc(slot)}|${i}" style="width:100%;border-left:0;border-right:0;border-bottom:0;background:none;text-align:left"><div class="ft"><b>${esc(it.name)}${it.brand ? ` · ${esc(it.brand)}` : ''}</b><span>${q} · P ${fmtK(x.p)} · C ${fmtK(x.c)} · G ${fmtK(x.f)}</span></div><div class="fk num">${fmtK(x.kcal)}<small>kcal</small></div></button>`; }).join('')}
-      <div class="mc-actions"><button class="btn primary sm" data-add="${esc(slot)}">${icon.plus} Añadir</button>${!m.items.length && y.items.length ? `<button class="btn secondary sm" data-copy="${esc(slot)}">Copiar de ayer</button>` : ''}</div>
+      ${m.items.map((it, i) => { const x = macrosFor(it.per100, it.g); const q = it.quick ? 'añadido rápido' : it.unit ? `${fmt(it.unit.n, it.unit.n % 1 ? 1 : 0)} ${esc(unitLabel(it.unit.name, it.unit.n))} · ${fmtK(it.g)} g` : `${fmtK(it.g)} g`; return `<button class="fi" data-item="${esc(slot)}|${i}" style="width:100%;border-left:0;border-right:0;border-bottom:0;background:none;text-align:left"><div class="ft"><b>${esc(it.name)}${it.brand ? ` · ${esc(it.brand)}` : ''}</b><span>${q} · P ${fmtK(x.p)} · C ${fmtK(x.c)} · G ${fmtK(x.f)}</span></div><div class="fk num">${fmtK(x.kcal)}<small>kcal</small></div></button>`; }).join('')}
+      ${m.items.length && !savedSigs.has(mealSignature(m.items)) && timesRepeated(allDays, date, slot, m.items) >= 2 ? `<button class="savesug" data-savesug="${esc(slot)}">${icon.list}<span>Repites esta comida. <b>Guárdala</b> para añadirla de un toque.</span></button>` : ''}
+      <div class="mc-actions"><button class="btn primary sm" data-add="${esc(slot)}">${icon.plus} Añadir</button>${!m.items.length && y.items.length ? `<button class="btn secondary sm" data-copy="${esc(slot)}">Copiar de ayer</button>` : ''}${!m.items.length && saved.length ? `<button class="btn secondary sm" data-savedpick="${esc(slot)}">Comida guardada</button>` : ''}<button class="mini" data-mmenu="${esc(slot)}" aria-label="Más opciones de ${esc(slot)}" style="width:40px;height:40px;flex:none">⋯</button></div>
     </div>`;
   }).join('');
 
@@ -94,8 +101,9 @@ export function render(ctx) {
       <div class="ch"><h2>Hoy llevas</h2><span class="badge ${day.trained === true ? 'g' : 'n'}">${label}</span></div>
       <div class="ring-wrap">
         ${donut({ pct: t.kcal ? all.kcal / t.kcal : 0, size: 104, stroke: 10, color: all.kcal > t.kcal * 1.1 ? 'var(--amber)' : 'var(--accent)', big: fmtK(all.kcal), sm: `de ${fmtK(t.kcal)}`, sm2: 'kcal' })}
-        <div class="macros">${bar('Proteína', all.p, t.p, 'var(--blue)')}${bar('Carbohidratos', all.c, t.c, 'var(--slate)')}${bar('Grasas', all.f, t.f, 'var(--slate)')}</div>
+        <div class="macros">${bar('Proteína', all.p, t.p, 'var(--blue)')}${bar('Carbos', all.c, t.c, 'var(--slate)')}${bar('Grasas', all.f, t.f, 'var(--slate)')}</div>
       </div>
+      ${canCopyDay ? `<button class="btn secondary sm" id="copyDay" style="width:100%;margin-top:12px">${icon.copy} Copiar todo lo de ayer</button>` : ''}
       ${day.trained == null ? `<div class="hint">Marca en «Día» si entrenas hoy: cambia el objetivo (entreno ${fmtK(v.diet.kcal.train)} · descanso ${fmtK(v.diet.kcal.rest)}).</div>` : ''}
     </div>
     ${cards}
@@ -120,6 +128,16 @@ export function bind(root, ctx) {
     toast(`${slot} copiada de ayer`);
     ctx.render();
   }));
+  $$('[data-mmenu]', root).forEach((b) => b.addEventListener('click', () => mealMenuSheet(ctx, date, b.dataset.mmenu)));
+  $$('[data-savedpick]', root).forEach((b) => b.addEventListener('click', () => savedPickSheet(ctx, date, b.dataset.savedpick)));
+  $$('[data-savesug]', root).forEach((b) => b.addEventListener('click', () => saveMealAs(ctx, mealOf(ctx.store.day(date), b.dataset.savesug).items, b.dataset.savesug)));
+  $('#copyDay', root)?.addEventListener('click', () => {
+    const y = ctx.store.day(addDays(date, -1));
+    const before = structuredClone(ctx.store.day(date).meals || null);
+    ctx.store.updateDay(date, (d) => { for (const m of y.meals || []) if (m.items?.length) { const cur = mealOf(d, m.slot); setMeal(d, m.slot, [...cur.items, ...structuredClone(m.items)]); } }, `${fmtShort(date)}: copia el día de ayer`);
+    ctx.render();
+    toast('Día de ayer copiado', { action: { label: 'Deshacer', fn: () => { ctx.store.updateDay(date, (d) => { if (before) d.meals = before; else delete d.meals; }, `${fmtShort(date)}: deshace copia del día`); ctx.render(); } } });
+  });
   $$('[data-item]', root).forEach((b) => b.addEventListener('click', () => {
     const [slot, i] = b.dataset.item.split('|');
     itemSheet(ctx, date, slot, +i);
@@ -269,6 +287,31 @@ function newMealSheet(ctx, date) {
   });
 }
 
+// ---------------------------------------------------------------- mis alimentos, comidas guardadas e historial
+const foodsDocOf = (ctx) => ctx.store.get(FILES.foods) || {};
+export const favoritesOf = (ctx) => foodsDocOf(ctx).favorites || [];
+export const savedMealsOf = (ctx) => foodsDocOf(ctx).saved_meals || [];
+function updFoods(ctx, fn, msg) {
+  ctx.store.update(FILES.foods, (doc) => {
+    doc = doc && typeof doc === 'object' ? doc : {};
+    doc.custom ||= []; doc.recipes ||= []; doc.frequent ||= {};
+    fn(doc);
+    return doc;
+  }, msg);
+}
+/** Copia mínima de un alimento para guardarla con un favorito: lo justo para apuntarlo sin la base. */
+const snap = (f) => JSON.parse(JSON.stringify({ id: f.id, name: f.name, brand: f.brand || undefined, per100: f.per100, units: f.units?.length ? f.units : undefined, qty: f.qty || undefined }));
+/** Alimento a partir de un registro del día: el de la base si está cargada; si no, lo que guarda el registro. */
+function foodOfItem(ctx, it) {
+  return byId(it.food, ctx.store.get(FILES.foods)) || { id: it.food, name: it.name, brand: it.brand, per100: it.per100, units: it.unit ? [{ name: it.unit.name, g: it.unit.g }] : [] };
+}
+const historyAt = (ctx, date) => foodHistory(ctx.store.allDays(), date);
+const qLabel = (e) => (e.unit ? `${fmt(e.unit.n, e.unit.n % 1 ? 1 : 0)} ${unitLabel(e.unit.name, e.unit.n)}` : `${fmtK(e.g)} g`);
+const vib = (ms = 12) => { try { navigator.vibrate?.(ms); } catch { /* sin vibración */ } };
+
+/** Bandeja: lo que se va eligiendo en «Añadir» antes de confirmarlo todo junto. [{food, g, unit}] */
+let TRAY = { key: '', items: [] };
+
 // ---------------------------------------------------------------- añadir: buscar
 function resultRow(f, terms) {
   const hl = (s) => esc(s).split(' ').map((w) => (terms.some((t) => norm(w).startsWith(t)) ? `<mark>${w}</mark>` : w)).join(' ');
@@ -276,36 +319,108 @@ function resultRow(f, terms) {
   return `<button class="res" data-pick="${esc(f.id)}"><div class="ft"><b>${hl(f.name)}</b><span>${[f.brand && hl(f.brand), f.stores && esc(f.stores), f.qty && esc(f.qty)].filter(Boolean).join(' · ')}${f.brand || f.stores || f.qty ? ' · ' : ''}${fmtK(f.per100.kcal)} kcal · P ${fmt(f.per100.p)} · C ${fmt(f.per100.c)} · G ${fmt(f.per100.f)} /100 g</span></div><span class="src ${f.src === 'mine' ? 'mine' : ''}">${src}</span></button>`;
 }
 
-function addSheet(ctx, date, slot) {
-  let lastResults = [];
-  let online = [];
+/**
+ * Añadir a una comida. Sin escribir nada: lo que sueles poner en esa comida, «Mis alimentos» (con su
+ * cantidad), comidas guardadas y recientes; con «+» van a la bandeja y se confirman todos juntos.
+ */
+function addSheet(ctx, date, slot, { keep = false } = {}) {
+  const key = `${date}|${slot}`;
+  if (!keep || TRAY.key !== key) TRAY = { key, items: [] };
+  const tray = TRAY.items;
+  let lastResults = [], online = [], pool = [];
   const foodsDoc = () => ctx.store.get(FILES.foods);
+  const h = historyAt(ctx, date);
+  const v = planFor(ctx.store.get(FILES.plan), date);
   openSheet(`<h3>Añadir a ${esc(slot)}</h3>
-    <div class="srch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input class="inp" id="fq" placeholder="p. ej. patata mercadona cocida bote" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" autofocus></div>
-    <div class="chips-row"><button id="fScan">▦ Escanear código</button><button id="fNew">+ Crear alimento</button><button id="fOnline">Buscar en internet</button></div>
-    <div id="fres"><div class="muted small" style="padding:10px 0">${isLoaded() ? '' : 'Cargando la base de alimentos (solo la primera vez)…'}</div></div>`, {
+    <div class="srch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input class="inp" id="fq" placeholder="Buscar: «patata mercadona cocida»" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"></div>
+    <div class="chips-row"><button id="fScan">▦ Escanear código</button><button id="fQuick">+ Rápido (solo kcal)</button><button id="fNew">+ Crear alimento</button><button id="fOnline">Buscar en internet</button></div>
+    <div id="fres"></div>
+    <div class="sheet-actions tray" id="tray" hidden></div>`, {
     bind: (sh) => {
       const input = $('#fq', sh);
+      const inTray = (id) => tray.some((x) => x.food.id === id);
+      const fromItem = (it) => ({ food: foodOfItem(ctx, it), g: it.g, unit: it.unit || null });
+      const row = (e) => {
+        const k = pool.push(e) - 1, x = macrosFor(e.food.per100, e.g), on = inTray(e.food.id);
+        return `<div class="qrow ${on ? 'in' : ''}"><button class="qn" data-open="${k}"><b>${esc(e.food.name)}</b><span><b>${esc(qLabel(e))}</b> · ${fmtK(x.kcal)} kcal · P ${fmtK(x.p)}</span></button><button class="qplus" data-tadd="${k}" aria-label="${on ? 'Quitar de' : 'Añadir a'} la bandeja">${on ? icon.check : icon.plus}</button></div>`;
+      };
+      const chip = (e) => {
+        const k = pool.push(e) - 1, on = inTray(e.food.id);
+        return `<button class="favc ${on ? 'in' : ''}" data-tadd="${k}"><span class="fn">${esc(e.food.name)}</span><small>${esc(qLabel(e))}</small><span class="qplus">${on ? icon.check : icon.plus}</span></button>`;
+      };
+      const home = () => {
+        const day = ctx.store.day(date);
+        const inMeal = new Set(mealOf(day, slot).items.map((i) => i.food));
+        const sugg = h.forSlot(slot).filter((it) => !inMeal.has(it.food)).slice(0, 5).map(fromItem);
+        const favs = favoritesOf(ctx).map((f) => ({ food: f.food, g: f.g, unit: f.unit || null }));
+        const saved = savedMealsOf(ctx);
+        const seen = new Set([...sugg.map((e) => e.food.id), ...inMeal]);
+        const rec = h.recent(14).filter((it) => !seen.has(it.food)).slice(0, 8).map(fromItem);
+        let out = '';
+        if (sugg.length) out += `<div class="grp">Sueles poner en ${esc(slot)}</div><div class="qlist">${sugg.map(row).join('')}</div>`;
+        out += `<div class="grp">Mis alimentos</div>${favs.length ? `<div class="favs">${favs.map(chip).join('')}</div>` : '<div class="muted small">Toca la ⭐ al elegir la cantidad de un alimento y lo tendrás aquí, con esa cantidad, a un toque.</div>'}`;
+        if (saved.length) out += `<div class="grp grp-row"><span>Comidas guardadas</span><button class="link" id="svEdit">Editar</button></div><div class="saved">${saved.map((m, i) => { const t = sumItems(m.items); return `<button class="sv" data-saved="${i}"><b>${esc(m.name)}</b><span>${m.items.length} ${m.items.length === 1 ? 'alimento' : 'alimentos'} · ${fmtK(t.kcal)} kcal · P ${fmtK(t.p)}</span></button>`; }).join('')}</div>`;
+        if (rec.length) out += `<div class="grp">Recientes</div><div class="qlist">${rec.map(row).join('')}</div>`;
+        if (!sugg.length && !favs.length && !rec.length) {
+          const fr = frequentFoods(foodsDoc());
+          out += fr.length ? `<div class="grp">Frecuentes</div>${fr.map((f) => resultRow(f, [])).join('')}` : '<div class="muted small" style="padding:10px 0">Escribe para buscar: genéricos, productos de supermercado y tus alimentos.</div>';
+          lastResults = fr;
+        }
+        return out;
+      };
       const paint = () => {
+        pool = [];
         const q = input.value;
-        const terms = highlightTerms(q);
-        let list, head = '';
-        if (!q.trim()) { list = frequentFoods(foodsDoc()); head = list.length ? '<div class="grp" style="margin:4px 0 0">Frecuentes</div>' : '<div class="muted small" style="padding:10px 0">Escribe para buscar: genéricos, productos de supermercado y tus alimentos.</div>'; }
-        else list = findFoods(q, foodsDoc());
-        const onl = online.length ? `<div class="grp">En internet (Open Food Facts)</div>${online.map((f) => resultRow(f, terms)).join('')}` : '';
-        lastResults = [...list, ...online];
-        $('#fres', sh).innerHTML = head + list.map((f) => resultRow(f, terms)).join('') + onl +
-          (q.trim() && !list.length && !online.length ? `<div class="muted small" style="padding:12px 0">Sin resultados. Prueba «Buscar en internet», escanea el código o créalo.</div>` : '');
+        if (!q.trim() && !online.length) {
+          $('#fres', sh).innerHTML = home();
+        } else {
+          const terms = highlightTerms(q);
+          const list = findFoods(q, foodsDoc());
+          const onl = online.length ? `<div class="grp">En internet (Open Food Facts)</div>${online.map((f) => resultRow(f, terms)).join('')}` : '';
+          lastResults = [...list, ...online];
+          $('#fres', sh).innerHTML = list.map((f) => resultRow(f, terms)).join('') + onl +
+            (!list.length && !online.length ? '<div class="muted small" style="padding:12px 0">Sin resultados. Prueba «Buscar en internet», escanea el código o créalo.</div>' : '');
+        }
         $$('[data-pick]', sh).forEach((b) => b.addEventListener('click', () => {
           const f = lastResults.find((x) => x.id === b.dataset.pick);
-          if (f) gramsSheet(ctx, date, slot, f);
+          if (f) gramsSheet(ctx, date, slot, f, { back: true });
         }));
+        $$('[data-open]', sh).forEach((b) => b.addEventListener('click', () => { const e = pool[+b.dataset.open]; gramsSheet(ctx, date, slot, e.food, { initial: e.g, initialUnit: e.unit, back: true }); }));
+        $$('[data-tadd]', sh).forEach((b) => b.addEventListener('click', () => {
+          const e = pool[+b.dataset.tadd];
+          const i = tray.findIndex((x) => x.food.id === e.food.id);
+          if (i >= 0) tray.splice(i, 1); else tray.push({ food: e.food, g: e.g, unit: e.unit });
+          vib(); paint();
+        }));
+        $$('[data-saved]', sh).forEach((b) => b.addEventListener('click', () => {
+          const m = savedMealsOf(ctx)[+b.dataset.saved];
+          for (const it of m.items) if (!inTray(it.food)) tray.push(it.quick ? { food: { id: it.food, name: it.name, per100: it.per100, quick: true }, g: it.g, unit: null } : fromItem(it));
+          vib(); paint(); toast(`«${m.name}» en la bandeja`);
+        }));
+        $('#svEdit', sh)?.addEventListener('click', () => savedManageSheet(ctx, date, slot));
+        paintTray();
+      };
+      const paintTray = () => {
+        const el = $('#tray', sh);
+        if (!tray.length) { el.hidden = true; el.innerHTML = ''; return; }
+        const add = tray.reduce((a, e) => { const x = macrosFor(e.food.per100, e.g); a.kcal += x.kcal; a.p += x.p; return a; }, { kcal: 0, p: 0 });
+        const now = sumItems((ctx.store.day(date).meals || []).flatMap((m) => m.items));
+        const tk = v ? dayTargets(v, ctx.store.day(date).trained).kcal : 0;
+        const pct = (x) => Math.min(100, tk ? (x / tk) * 100 : 0);
+        el.hidden = false;
+        el.innerHTML = `<div class="tray-pre"><span>${tray.length} en la bandeja · <b>+${fmtK(add.kcal)} kcal · P +${fmtK(add.p)}</b></span>${tk ? `<span>el día quedaría en <b>${fmtK(now.kcal + add.kcal)} / ${fmtK(tk)}</b></span>` : ''}</div>
+          ${tk ? `<div class="bar2"><i class="pre" style="width:${pct(now.kcal + add.kcal)}%"></i><i style="width:${pct(now.kcal)}%"></i></div>` : ''}
+          <div class="tray-btns"><button class="btn secondary sm" id="trClear" type="button">Vaciar</button><button class="btn primary" id="trGo" type="button">Añadir ${tray.length} a ${esc(slot)}</button></div>`;
+        $('#trClear', sh).addEventListener('click', () => { tray.length = 0; paint(); });
+        $('#trGo', sh).addEventListener('click', () => commitTray(ctx, date, slot));
       };
       let t;
       input.addEventListener('input', () => { online = []; clearTimeout(t); t = setTimeout(paint, 120); });
-      loadFoods().then(paint).catch(() => { $('#fres', sh).innerHTML = '<div class="err">No se pudo cargar la base de alimentos.</div>'; });
+      paint();
+      if (!isLoaded()) loadFoods().then(() => { if (input.value.trim()) paint(); }).catch(() => { $('#fres', sh).insertAdjacentHTML('afterbegin', '<div class="err">No se pudo cargar la base de alimentos.</div>'); });
       $('#fNew', sh).addEventListener('click', () => customFoodSheet(ctx, date, slot, { name: input.value.trim() }));
       $('#fScan', sh).addEventListener('click', () => scanSheet(ctx, date, slot));
+      $('#fQuick', sh).addEventListener('click', () => quickSheet(ctx, date, slot));
       $('#fOnline', sh).addEventListener('click', async (e) => {
         const q = input.value.trim();
         if (q.length < 3) return toast('Escribe al menos 3 letras');
@@ -319,59 +434,247 @@ function addSheet(ctx, date, slot) {
   });
 }
 
+/** Apunta todo lo de la bandeja en la comida, con «Deshacer». */
+function commitTray(ctx, date, slot) {
+  const tray = TRAY.items;
+  if (!tray.length) return;
+  const before = structuredClone(mealOf(ctx.store.day(date), slot).items);
+  for (const e of tray) {
+    if (e.food.quick) ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); setMeal(d, slot, [...m.items, { food: e.food.id, name: e.food.name, g: e.g, quick: true, per100: { ...e.food.per100 } }]); }, `${slot} ${fmtShort(date)}: +${e.food.name}`);
+    else addItem(ctx, date, slot, e.food, e.g, e.unit);
+  }
+  const n = tray.length;
+  TRAY = { key: '', items: [] };
+  vib(20);
+  closeSheet();
+  ctx.render();
+  toast(`${n} ${n === 1 ? 'alimento añadido' : 'alimentos añadidos'} a ${slot}`, { action: { label: 'Deshacer', fn: () => {
+    ctx.store.updateDay(date, (d) => setMeal(d, slot, before), `${slot} ${fmtShort(date)}: deshace lo añadido`);
+    ctx.render();
+  } } });
+}
+
 // ---------------------------------------------------------------- cantidad
-function gramsSheet(ctx, date, slot, food, { initial = 100, initialUnit = null, onSave = null } = {}) {
+/**
+ * Elegir cantidad. Empieza en tu última cantidad de ese alimento, ofrece tus cantidades habituales,
+ * calcula los gramos para una proteína o unas kcal dadas y enseña cómo queda el día. ⭐ = Mis alimentos.
+ * back: se abrió desde «Añadir» (permite volver y usar la bandeja).
+ */
+function gramsSheet(ctx, date, slot, food, { initial = null, initialUnit = null, onSave = null, back = false } = {}) {
   const units = unitsOf(food);
-  // unidad por defecto: la del registro que se edita, o la primera propia del alimento (p. ej. pastilla)
-  let unit = initialUnit ? units.find((u) => u.name === initialUnit.name) || { name: initialUnit.name, g: initialUnit.g } : (food.units?.[0] || null);
-  let qty = initialUnit ? initialUnit.n : unit ? 1 : initial;
-  const quick = unit ? [1, 2, 3, 4] : [50, 100, 150, 200];
+  const h = historyAt(ctx, date);
+  const last = h.last(food.id);
+  if (initial == null && !onSave && last) { initial = last.g; initialUnit = last.unit || null; }
+  const fromHistory = initial != null && !initialUnit && !onSave;
+  // unidad por defecto: la del registro que se edita o la última usada; si no, la primera propia del alimento
+  let unit = initialUnit ? units.find((u) => u.name === initialUnit.name) || { name: initialUnit.name, g: initialUnit.g } : fromHistory ? null : (food.units?.[0] || null);
+  let qty = initialUnit ? initialUnit.n : unit ? 1 : initial ?? 100;
+  const hab = [...new Set([last && !last.unit ? Math.round(last.g) : null, ...h.habitual(food.id, 4).filter((q) => !q.unit).map((q) => q.g)].filter(Boolean))];
+  const gramChips = [...hab, ...[50, 100, 150, 200].filter((x) => !hab.includes(x))].slice(0, 4);
+  const trayN = back ? TRAY.items.length : 0;
+  const v = planFor(ctx.store.get(FILES.plan), date);
+  const isFav = () => favoritesOf(ctx).some((f) => f.food.id === food.id);
   const unitBtns = `<div class="seg" id="uSeg" style="margin:10px 0 0">${[['g', 'gramos'], ...units.map((u) => [u.name, `${u.name} · ${fmt(u.g, u.g % 1 ? 1 : 0)} g`])].map(([k, l]) => `<button type="button" data-v="${esc(k)}" class="${(unit ? unit.name : 'g') === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>`;
-  openSheet(`<h3>${esc(food.name)}</h3><div class="muted">${[food.brand, food.stores || (food.src === 'gen' ? 'Genérico (CIQUAL)' : ''), food.qty].filter(Boolean).map(esc).join(' · ')} · ${fmtK(food.per100.kcal)} kcal/100 g</div>
+  openSheet(`<div class="sheet-title">${back ? `<button class="mini" id="fBack" aria-label="Volver a la lista">${icon.back}</button>` : ''}<h3>${esc(food.name)}</h3>${food.quick ? '' : `<button class="star ${isFav() ? 'on' : ''}" id="fFav" aria-label="Mis alimentos">★</button>`}</div>
+    <div class="muted">${[food.brand, food.stores || (food.src === 'gen' ? 'Genérico (CIQUAL)' : ''), food.qty].filter(Boolean).map(esc).join(' · ')}${food.brand || food.stores || food.qty || food.src === 'gen' ? ' · ' : ''}${fmtK(food.per100.kcal)} kcal/100 g</div>
     ${units.length ? unitBtns : ''}
-    <div class="field" style="margin-top:12px"><label for="fg" id="fgL">Cantidad</label><div class="unit-wrap"><input class="inp" id="fg" inputmode="decimal" value="${fmt(qty, qty % 1 ? 1 : 0)}" autofocus><span class="u" id="fgU"></span></div></div>
-    <div class="gpick" id="gpick"></div>
+    <div class="qty-big"><input id="fg" inputmode="decimal" value="${fmt(qty, qty % 1 ? 1 : 0)}" aria-label="Cantidad"><span id="fgU"></span></div>
+    <div class="qchips" id="gpick"></div>
+    ${onSave ? '' : `<div class="solver"><span>o calcula por</span><div class="seg sm" id="solveSeg"><button type="button" data-v="g" class="on">gramos</button><button type="button" data-v="p">proteína</button><button type="button" data-v="k">kcal</button></div></div>
+    <div id="solveBox" hidden><div class="solver"><span>Quiero</span><input class="inp sm" id="solveIn" inputmode="decimal" style="width:84px;text-align:center"><span id="solveU">g de proteína</span></div>
+      <div style="text-align:center;margin:-2px 0 10px"><button class="btn secondary sm" type="button" id="fillP">Lo que me falta de proteína</button></div></div>`}
     <div class="mtot" id="mt"></div>
-    <div class="sheet-actions"><button class="btn primary" id="fAdd">${onSave ? 'Guardar' : `Añadir a ${esc(slot)}`}</button></div>
-    <button class="link" id="fEdit" type="button" style="width:100%;text-align:center;margin-top:6px">Editar datos o unidades de este alimento</button>`, {
+    ${onSave || !v ? '' : '<div class="impact" id="imp"></div>'}
+    <div class="sheet-actions">${!onSave && back && !trayN ? '<div class="g2" style="gap:8px"><button class="btn secondary" id="fMore">Añadir y elegir más</button><button class="btn primary" id="fAdd">Añadir</button></div>' : `<button class="btn primary" id="fAdd">${onSave ? 'Guardar' : trayN ? `Añadir a la bandeja (${trayN + 1})` : `Añadir a ${esc(slot)}`}</button>`}</div>
+    ${food.quick ? '' : '<button class="link" id="fEdit" type="button" style="width:100%;text-align:center;margin-top:6px">Editar datos o unidades de este alimento</button>'}`, {
     bind: (sh) => {
       const grams = () => (num($('#fg', sh).value) || 0) * (unit ? unit.g : 1);
+      const setGrams = (g) => { const n = unit ? g / unit.g : g; $('#fg', sh).value = fmt(Math.round(n * 10) / 10, (Math.round(n * 10) / 10) % 1 ? 1 : 0); upd(); };
       const paintQuick = () => {
-        const q = unit ? [1, 2, 3, 4] : quick;
-        $('#gpick', sh).innerHTML = q.map((v) => `<button type="button" data-g="${v}">${v}${unit ? '' : ' g'}</button>`).join('');
+        const list = unit ? [1, 2, 3, 4].map((x) => [x, '']) : gramChips.map((x) => [x, last && !last.unit && Math.round(last.g) === x ? 'la última' : hab.includes(x) ? 'habitual' : '']);
+        $('#gpick', sh).innerHTML = list.map(([x, l]) => `<button type="button" class="qc" data-g="${x}">${x}${unit ? '' : ' g'}${l ? ` <small>· ${l}</small>` : ''}</button>`).join('');
         $$('[data-g]', sh).forEach((b) => b.addEventListener('click', () => { $('#fg', sh).value = b.dataset.g; upd(); }));
-        $('#fgU', sh).textContent = unit ? unitLabel(unit.name, num($('#fg', sh).value) || 0) : 'g';
-        $('#fgL', sh).textContent = unit ? `Cantidad (${unitLabel(unit.name, 2)})` : 'Cantidad';
       };
       const upd = () => {
         const g = grams();
         const x = macrosFor(food.per100, g);
         $('#fgU', sh).textContent = unit ? unitLabel(unit.name, num($('#fg', sh).value) || 0) : 'g';
-        $('#mt', sh).innerHTML = `<div><b class="num">${fmtK(x.kcal)}</b><span>kcal</span></div><div><b class="num">${fmt(x.p)}</b><span>prot. g</span></div><div><b class="num">${fmt(x.c)}</b><span>carb. g</span></div><div><b class="num">${fmt(x.f)}</b><span>grasa g</span></div>${unit ? `<div style="grid-column:1/-1;font-size:11.5px;color:var(--ink-3);font-weight:700">= ${fmt(g, g % 1 ? 1 : 0)} g</div>` : ''}`;
+        $$('#gpick .qc', sh).forEach((b) => b.classList.toggle('on', num($('#fg', sh).value) === +b.dataset.g));
+        $('#mt', sh).innerHTML = `<div><b class="num">${fmtK(x.kcal)}</b><span>kcal</span></div><div><b class="num" style="color:var(--blue)">${fmt(x.p)}</b><span>prot. g</span></div><div><b class="num">${fmt(x.c)}</b><span>carb. g</span></div><div><b class="num">${fmt(x.f)}</b><span>grasa g</span></div>${unit ? `<div style="grid-column:1/-1;font-size:11.5px;color:var(--ink-3);font-weight:700">= ${fmt(g, g % 1 ? 1 : 0)} g</div>` : ''}`;
+        const imp = $('#imp', sh);
+        if (imp) {
+          const day = ctx.store.day(date);
+          const t = dayTargets(v, day.trained);
+          const now = sumItems((day.meals || []).flatMap((m) => m.items));
+          const extra = trayN ? TRAY.items.reduce((a, e) => { const y = macrosFor(e.food.per100, e.g); a.kcal += y.kcal; a.p += y.p; a.c += y.c; a.f += y.f; return a; }, { kcal: 0, p: 0, c: 0, f: 0 }) : { kcal: 0, p: 0, c: 0, f: 0 };
+          const line = (l, cur, add, goal, col) => `<div class="imp"><span>${l}</span><div class="bar2"><i class="pre" style="width:${Math.min(100, ((cur + add) / (goal || 1)) * 100)}%;background:${col}"></i><i style="width:${Math.min(100, (cur / (goal || 1)) * 100)}%;background:${col}"></i></div><span class="num"><b>${fmtK(cur + add)}</b> / ${fmtK(goal)}</span></div>`;
+          imp.innerHTML = `<div class="grp" style="margin:0 0 6px">Así queda el día</div>${line('kcal', now.kcal + extra.kcal, x.kcal, t.kcal, 'var(--accent)')}${line('Proteína', now.p + extra.p, x.p, t.p, 'var(--blue)')}${line('Carbos', now.c + extra.c, x.c, t.c, 'var(--slate)')}${line('Grasas', now.f + extra.f, x.f, t.f, 'var(--slate)')}`;
+        }
       };
-      $$('#uSeg button', sh).forEach((b) => b.addEventListener('click', () => {
+      const pickUnit = (k) => {
         const g = grams();
-        $$('#uSeg button', sh).forEach((x) => x.classList.toggle('on', x === b));
-        unit = b.dataset.v === 'g' ? null : units.find((u) => u.name === b.dataset.v);
-        // convertir lo escrito a la nueva unidad
-        const v = unit ? g / unit.g : g;
-        $('#fg', sh).value = fmt(Math.round(v * 10) / 10, (Math.round(v * 10) / 10) % 1 ? 1 : 0);
+        $$('#uSeg button', sh).forEach((x) => x.classList.toggle('on', x.dataset.v === k));
+        unit = k === 'g' ? null : units.find((u) => u.name === k);
+        setGrams(g);
         paintQuick(); upd();
-      }));
+      };
+      $$('#uSeg button', sh).forEach((b) => b.addEventListener('click', () => pickUnit(b.dataset.v)));
       $('#fg', sh).addEventListener('input', upd);
       $('#fg', sh).addEventListener('focus', (e) => e.target.select());
       paintQuick(); upd();
+      // calculadora inversa: gramos para X g de proteína o X kcal
+      const solve = () => {
+        const mode = segValue(sh, '#solveSeg'), want = num($('#solveIn', sh).value);
+        const per = mode === 'p' ? food.per100.p : food.per100.kcal;
+        if (want == null || !per) return;
+        if (unit) pickUnit('g');
+        setGrams(Math.max(0, Math.min(5000, (want / per) * 100)));
+      };
+      bindSeg(sh, '#solveSeg', (m) => {
+        $('#solveBox', sh).hidden = m === 'g';
+        if (m === 'g') return;
+        const x = macrosFor(food.per100, grams());
+        $('#solveU', sh).textContent = m === 'p' ? 'g de proteína' : 'kcal';
+        $('#fillP', sh).hidden = m !== 'p';
+        $('#solveIn', sh).value = fmtK(m === 'p' ? x.p : x.kcal);
+        if (m === 'p' && !food.per100.p) toast('Este alimento no tiene proteína');
+        $('#solveIn', sh).focus();
+      });
+      $('#solveIn', sh)?.addEventListener('input', solve);
+      $('#solveIn', sh)?.addEventListener('focus', (e) => e.target.select());
+      $('#fillP', sh)?.addEventListener('click', () => {
+        const day = ctx.store.day(date);
+        const falta = dayTargets(v, day.trained).p - sumItems((day.meals || []).flatMap((m) => m.items)).p;
+        if (falta <= 0) return toast('Ya tienes la proteína del día');
+        $('#solveIn', sh).value = fmtK(falta); solve();
+      });
+      $('#fFav', sh)?.addEventListener('click', (e) => {
+        const on = isFav();
+        const g = grams(), n = num($('#fg', sh).value);
+        const u = unit ? { name: unit.name, g: unit.g, n } : null;
+        updFoods(ctx, (doc) => {
+          doc.favorites = (doc.favorites || []).filter((f) => f.food.id !== food.id);
+          if (!on) doc.favorites.push({ food: snap(food), g, ...(u ? { unit: u } : {}) });
+          if (!doc.favorites.length) delete doc.favorites;
+        }, `${on ? 'Quita de' : 'Añade a'} Mis alimentos: ${food.name}`);
+        e.currentTarget.classList.toggle('on', !on);
+        vib();
+        toast(on ? 'Quitado de Mis alimentos' : `En Mis alimentos con ${u ? qLabel({ unit: u }) : `${fmtK(g)} g`}`);
+      });
+      $('#fBack', sh)?.addEventListener('click', () => addSheet(ctx, date, slot, { keep: true }));
       $('#fEdit', sh)?.addEventListener('click', () => foodEditor(ctx, date, slot, food));
-      $('#fAdd', sh).addEventListener('click', () => {
+      const read = () => {
         const n = num($('#fg', sh).value);
         const g = grams();
-        if (!n || n <= 0 || g > 5000) return toast('Cantidad no válida');
-        const u = unit ? { name: unit.name, g: unit.g, n } : null;
-        if (onSave) onSave(g, u);
-        else { addItem(ctx, date, slot, food, g, u); toast(`${food.name} · ${u ? `${fmt(n, n % 1 ? 1 : 0)} ${unitLabel(u.name, n)}` : `${fmtK(g)} g`}`); }
-        closeSheet();
-        ctx.render();
+        if (!n || n <= 0 || g > 5000) { toast('Cantidad no válida'); return null; }
+        return { g, u: unit ? { name: unit.name, g: unit.g, n } : null };
+      };
+      const toTray = (r) => { TRAY.items.push({ food, g: r.g, unit: r.u }); vib(); addSheet(ctx, date, slot, { keep: true }); };
+      $('#fMore', sh)?.addEventListener('click', () => { const r = read(); if (r) toTray(r); });
+      $('#fAdd', sh).addEventListener('click', () => {
+        const r = read(); if (!r) return;
+        if (onSave) { onSave(r.g, r.u); closeSheet(); ctx.render(); return; }
+        if (trayN) { toTray(r); return; }
+        TRAY = { key: `${date}|${slot}`, items: [{ food, g: r.g, unit: r.u }] };
+        commitTray(ctx, date, slot);
       });
+    },
+  });
+}
+
+// ---------------------------------------------------------------- añadir rápido (solo cifras)
+function quickSheet(ctx, date, slot) {
+  openSheet(`<h3>Añadir rápido</h3><div class="muted">Para cuando no sabes los alimentos (comer fuera): solo las cifras.</div>
+    <div class="stack" style="margin-top:12px">
+      <div class="field"><label for="qN">Qué fue</label><input class="inp" id="qN" placeholder="p. ej. Menú del día"></div>
+      <div class="g2"><div class="field"><label for="qK">Kcal</label><input class="inp" id="qK" inputmode="decimal"></div><div class="field"><label for="qP">Proteína g</label><input class="inp" id="qP" inputmode="decimal"></div></div>
+      <div class="g2"><div class="field"><label for="qC">Carbohidratos g</label><input class="inp" id="qC" inputmode="decimal"></div><div class="field"><label for="qF">Grasas g</label><input class="inp" id="qF" inputmode="decimal"></div></div>
+      <div class="hint">Si no pones las kcal, se calculan con los macros.</div>
+      <div class="sheet-actions"><button class="btn primary" id="qAdd">Añadir a ${esc(slot)}</button></div>
+    </div>`, {
+    bind: (sh) => $('#qAdd', sh).addEventListener('click', () => {
+      const p = num($('#qP', sh).value) || 0, c = num($('#qC', sh).value) || 0, f = num($('#qF', sh).value) || 0;
+      let kcal = num($('#qK', sh).value);
+      if (kcal == null) kcal = Math.round(4 * p + 4 * c + 9 * f);
+      if (!kcal || kcal < 0 || kcal > 6000) return toast('Pon las kcal (o los macros)');
+      const name = $('#qN', sh).value.trim() || 'Añadido rápido';
+      TRAY = { key: `${date}|${slot}`, items: [...(TRAY.key === `${date}|${slot}` ? TRAY.items : []), { food: { id: `quick:${Date.now().toString(36)}`, name, quick: true, per100: { kcal, p, c, f } }, g: 100, unit: null }] };
+      commitTray(ctx, date, slot);
+    }),
+  });
+}
+
+// ---------------------------------------------------------------- menú de una comida: copiar, guardar
+function copyMealTo(ctx, fromDate, slot, toDate) {
+  const items = structuredClone(mealOf(ctx.store.day(fromDate), slot).items);
+  if (!items.length) return toast('La comida está vacía');
+  const before = structuredClone(mealOf(ctx.store.day(toDate), slot).items);
+  ctx.store.updateDay(toDate, (d) => { const m = mealOf(d, slot); setMeal(d, slot, [...m.items, ...items]); }, `${slot} ${fmtShort(toDate)}: copiada de ${fmtShort(fromDate)}`);
+  ctx.render();
+  toast(`${slot} copiada al ${fmtShort(toDate)}`, { action: { label: 'Deshacer', fn: () => { ctx.store.updateDay(toDate, (d) => setMeal(d, slot, before), `${slot} ${fmtShort(toDate)}: deshace copia`); ctx.render(); } } });
+}
+
+async function saveMealAs(ctx, items, suggested = '') {
+  const name = await askText({ title: 'Guardar comida', text: 'Para añadirla entera de un toque (en «Añadir» → Comidas guardadas).', placeholder: suggested || 'p. ej. Desayuno de siempre', ok: 'Guardar' });
+  if (!name) return;
+  updFoods(ctx, (doc) => { doc.saved_meals = [...(doc.saved_meals || []), { id: `m:${Date.now().toString(36)}`, name, items: structuredClone(items) }]; }, `Comida guardada: ${name}`);
+  toast(`«${name}» guardada`);
+  ctx.render();
+}
+
+function mealMenuSheet(ctx, date, slot) {
+  const m = mealOf(ctx.store.day(date), slot);
+  const today = ctx.today(), tomorrow = addDays(today, 1);
+  const opt = (id, ic, t, sub = '') => `<button class="menu-it" id="${id}" type="button">${ic}<span>${t}${sub ? `<small>${sub}</small>` : ''}</span></button>`;
+  openSheet(`<h3>${esc(slot)}</h3><div class="muted">${fmtShort(date)} · ${m.items.length} ${m.items.length === 1 ? 'alimento' : 'alimentos'}</div>
+    <div class="menu-list">
+      ${m.items.length && date !== today ? opt('mmToday', icon.copy, 'Copiar a hoy') : ''}
+      ${m.items.length ? opt('mmTomorrow', icon.copy, date === tomorrow ? 'Copiar a hoy' : 'Copiar a mañana') : ''}
+      ${m.items.length ? `<div class="menu-it"><span style="flex:1">Copiar a otro día<small>Se añade a «${esc(slot)}» de ese día</small></span><input type="date" class="inp sm" id="mmDate" max="${tomorrow}" style="width:auto"></div>` : ''}
+      ${m.items.length ? opt('mmSave', icon.list, 'Guardar como comida', 'Para añadirla entera de un toque') : ''}
+      ${opt('mmRename', icon.edit, 'Cambiar nombre')}
+      <button class="menu-it danger" id="mmDel" type="button">${icon.trash}<span>Borrar comida</span></button>
+    </div>`, {
+    bind: (sh) => {
+      $('#mmToday', sh)?.addEventListener('click', () => { closeSheet(); copyMealTo(ctx, date, slot, today); });
+      $('#mmTomorrow', sh)?.addEventListener('click', () => { closeSheet(); copyMealTo(ctx, date, slot, date === tomorrow ? today : tomorrow); });
+      $('#mmDate', sh)?.addEventListener('change', (e) => { const to = e.target.value; if (!to || to > tomorrow) return; closeSheet(); copyMealTo(ctx, date, slot, to); });
+      $('#mmSave', sh)?.addEventListener('click', () => { closeSheet(); saveMealAs(ctx, m.items, slot); });
+      $('#mmRename', sh).addEventListener('click', () => renameMealSheet(ctx, date, slot));
+      $('#mmDel', sh).addEventListener('click', () => { closeSheet(); removeMeal(ctx, date, slot); });
+    },
+  });
+}
+
+/** Elegir una comida guardada para una comida vacía (se añade entera, con «Deshacer»). */
+function savedPickSheet(ctx, date, slot) {
+  const saved = savedMealsOf(ctx);
+  openSheet(`<h3>Comida guardada</h3><div class="muted">Se añade entera a «${esc(slot)}».</div>
+    <div class="saved" style="margin-top:12px">${saved.map((m, i) => { const t = sumItems(m.items); return `<button class="sv" data-sp="${i}"><b>${esc(m.name)}</b><span>${m.items.map((x) => esc(x.name)).join(' · ')}</span><span>${fmtK(t.kcal)} kcal · P ${fmtK(t.p)}</span></button>`; }).join('')}</div>`, {
+    bind: (sh) => $$('[data-sp]', sh).forEach((b) => b.addEventListener('click', () => {
+      const m = saved[+b.dataset.sp];
+      const before = structuredClone(mealOf(ctx.store.day(date), slot).items);
+      ctx.store.updateDay(date, (d) => { const cur = mealOf(d, slot); setMeal(d, slot, [...cur.items, ...structuredClone(m.items)]); }, `${slot} ${fmtShort(date)}: ${m.name}`);
+      closeSheet(); ctx.render(); vib(20);
+      toast(`«${m.name}» añadida`, { action: { label: 'Deshacer', fn: () => { ctx.store.updateDay(date, (d) => setMeal(d, slot, before), `${slot} ${fmtShort(date)}: deshace ${m.name}`); ctx.render(); } } });
+    })),
+  });
+}
+
+function savedManageSheet(ctx, date, slot) {
+  const saved = savedMealsOf(ctx);
+  openSheet(`<h3>Comidas guardadas</h3><div class="muted">Para crear una: menú ⋯ de una comida → «Guardar como comida».</div>
+    <div style="margin-top:10px">${saved.map((m, i) => { const t = sumItems(m.items); return `<div class="row-edit"><div class="t"><b>${esc(m.name)}</b><span>${m.items.map((x) => esc(x.name)).join(' · ')} · ${fmtK(t.kcal)} kcal</span></div><div class="ops"><button class="mini danger" data-sdel="${i}" aria-label="Borrar ${esc(m.name)}">${icon.trash}</button></div></div>`; }).join('') || '<div class="muted small">No hay ninguna.</div>'}</div>
+    <button class="btn secondary" id="svBack" style="margin-top:12px">Volver</button>`, {
+    bind: (sh) => {
+      $('#svBack', sh).addEventListener('click', () => addSheet(ctx, date, slot, { keep: true }));
+      $$('[data-sdel]', sh).forEach((b) => b.addEventListener('click', async () => {
+        const m = saved[+b.dataset.sdel];
+        if (!(await ask({ title: `¿Borrar «${m.name}»?`, text: 'Solo se borra la comida guardada; lo que ya apuntaste no se toca.', ok: 'Borrar', danger: true }))) return;
+        updFoods(ctx, (doc) => { doc.saved_meals = (doc.saved_meals || []).filter((x) => x.id !== m.id); if (!doc.saved_meals.length) delete doc.saved_meals; }, `Borra comida guardada: ${m.name}`);
+        toast(`«${m.name}» borrada`);
+        savedManageSheet(ctx, date, slot);
+      }));
     },
   });
 }
@@ -386,12 +689,12 @@ function itemSheet(ctx, date, slot, i) {
   const food = { id: it.food, name: it.name, brand: it.brand, per100: it.per100, units: known?.units || (it.unit ? [{ name: it.unit.name, g: it.unit.g }] : []), qty: known?.qty };
   openSheet(`<h3>${esc(it.name)}</h3><div class="muted">${esc(slot)} · ${it.unit ? `${fmt(it.unit.n, it.unit.n % 1 ? 1 : 0)} ${esc(unitLabel(it.unit.name, it.unit.n))} · ` : ''}${fmtK(it.g)} g</div>
     <div class="stack" style="margin-top:14px">
-      <button class="btn secondary" id="iG">${icon.edit} Cambiar cantidad</button>
+      ${it.quick ? '' : `<button class="btn secondary" id="iG">${icon.edit} Cambiar cantidad</button>`}
       <div class="field"><label for="iMove">Mover a</label><select class="inp" id="iMove">${slots.map((s) => `<option ${s === slot ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
       <button class="btn secondary" id="iDel" style="color:var(--amber)">${icon.trash} Quitar</button>
     </div>`, {
     bind: (sh) => {
-      $('#iG', sh).addEventListener('click', () => gramsSheet(ctx, date, slot, food, {
+      $('#iG', sh)?.addEventListener('click', () => gramsSheet(ctx, date, slot, food, {
         initial: it.g,
         initialUnit: it.unit || null,
         onSave: (g, u) => ctx.store.updateDay(date, (d) => { const m = mealOf(d, slot); m.items[i].g = g; if (u) m.items[i].unit = u; else delete m.items[i].unit; setMeal(d, slot, m.items); }, `${slot} ${fmtShort(date)}: ${it.name} ${fmtK(g)} g`),
@@ -500,7 +803,7 @@ function foodEditor(ctx, date, slot, food) {
           return doc;
         }, `${isNew ? 'Alimento propio' : 'Edita alimento'}: ${name}`);
         toast('Alimento guardado');
-        gramsSheet(ctx, date, slot, { ...saved, src: 'mine' });
+        gramsSheet(ctx, date, slot, { ...saved, src: 'mine' }, { back: true });
       });
     },
   });
@@ -524,7 +827,7 @@ function scanSheet(ctx, date, slot) {
         await loadFoods().catch(() => {});
         let f = byEan(ean, ctx.store.get(FILES.foods));
         if (!f) { try { f = await lookupBarcodeOnline(ean); } catch { f = null; } }
-        if (f) { scanner?.stop(); gramsSheet(ctx, date, slot, f); }
+        if (f) { scanner?.stop(); gramsSheet(ctx, date, slot, f, { back: true }); }
         else { scanner?.stop(); toast('No está en ninguna base: créalo con la etiqueta'); customFoodSheet(ctx, date, slot, { ean }); }
       };
       if (supported) {

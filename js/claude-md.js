@@ -2,7 +2,7 @@
 // datos como CLAUDE.md. Así, al trabajar sobre el repo, Claude sabe qué es cada fichero y cómo cambiarlo
 // sin romper nada. Cambia DATA_DOC_VERSION cuando cambie el modelo de datos.
 
-export const DATA_DOC_VERSION = 5;
+export const DATA_DOC_VERSION = 6;
 
 export const CLAUDE_MD = `# Recomp · repo de datos
 
@@ -32,7 +32,7 @@ siempre respetando estas reglas.
 | \`config.json\` | perfil (\`profile\`), medidas del control (\`metrics\`), fórmulas, alertas, \`meal_slots\`, \`checkin_weekday\` (0 = domingo) |
 | \`plan.json\` | \`{ "versions": [ … ] }\` versiones completas del plan |
 | \`exercises.json\` | ejercicios propios \`{ "items": [ { "id": "mine:…", "name", "muscles": { "espalda": 1, "biceps": 0.5 } } ] }\` |
-| \`foods.json\` | alimentos propios, recetas y frecuencia de uso |
+| \`foods.json\` | alimentos propios (\`custom\`), frecuencia de uso, «Mis alimentos» (\`favorites\`: alimento + cantidad) y comidas guardadas (\`saved_meals\`) |
 | \`days/AAAA-MM.json\` | un objeto por fecha con lo registrado ese día (ver abajo) |
 | \`fotos/AAAA-MM-DD/*.jpg\` | fotos del control (frente, perfiles, espalda) |
 | \`resumen.md\` | resumen legible (generado): **léelo primero para tener contexto rápido** |
@@ -57,6 +57,8 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 - \`kind\`: \`supplement\` o \`medication\`. Porciones: P proteína, C carbohidrato, G grasa, F fruta, L lácteo.
 - Comidas: \`meals_mode\` \`fixed\` (lista \`meals\`, cada una con \`target\` en gramos, \`portions\` o nada) o \`free\`
   (\`meals\` vacío: se añaden cada día). **No repartas** el objetivo del día entre comidas salvo que lo pida.
+- Comidas guardadas: \`{ "id": "m:…", "name": "Desayuno de siempre", "items": [ …mismo formato que en los días… ] }\`.
+  Un registro con \`"quick": true\` es un «añadido rápido» (solo cifras, \`g\` = 100 y \`per100\` = los totales).
 - En los días, un alimento puede llevar \`unit\` \`{ "name": "pastilla", "g": 5.5, "n": 4 }\` (\`g\` del registro = n × g).
 - Ejercicios: \`name\` libre; la app los reconoce por nombre en su catálogo (~100 comunes: «Press banca con barra»,
   «Remo con mancuernas en banco inclinado», «Curl femoral sentado»…). Si inventas uno que no es habitual,
