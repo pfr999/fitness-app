@@ -91,6 +91,21 @@ t_objetivo = −τ · ln(1 − ε·(W_obj − W₀)/ΔI)     (argumento ≤ 0 �
 
 ## 4. Objetivos de referencia (valores por defecto editables)
 
+**Objetivo de la fase** (`targets.goal`): `loss` pérdida · `maintain` mantenimiento · `gain` volumen ·
+`none` sin objetivo (solo registro). Un plan sin el campo es de pérdida (compatibilidad). El ritmo se trata
+internamente como **cambio de peso con signo** (% peso/semana; negativo = bajar) y cada objetivo define
+su franja (`rateBand` en `engine/targets.js`):
+
+| Objetivo | Franja automática | Aviso (2 semanas seguidas fuera) | Kcal de más |
+|---|---|---|---|
+| Pérdida | según % graso (tabla de abajo) | demasiado rápido (masa magra) / demasiado lento | ámbar > +10 % |
+| Mantenimiento | ±0,15 %/sem | subiendo o bajando | sin aviso |
+| Volumen | +0,15–0,35 %/sem (Iraki 2019: principiantes/intermedios ≈ 0,25–1,5 %/mes) | demasiado rápido (grasa) / demasiado lento | sin aviso |
+| Sin objetivo | — | ninguno; sin previsión | sin aviso |
+
+Kcal y macros del plan son **opcionales** (null). Sin kcal, o con «Sin objetivo», los días sin registrar no
+se suponen «según el plan»: el gasto (§2) usa solo los días registrados o validados.
+
 | Parámetro | Valor por defecto | Fuente |
 |---|---|---|
 | Ritmo de pérdida (auto según % graso y sexo) | Hombres > 20 %: **0,7–1,0** · 13–20 %: **0,4–0,7** · < 13 %: **0,25–0,5** % peso/sem. Mujeres: mismos ritmos con cortes 9 puntos más altos (> 29 · 22–29 · < 22) por la mayor grasa esencial (~12 % vs ~3 %) | Helms 2014, Garthe 2011 [MA/RCT]; la prioridad de conservar músculo baja el ritmo cuanto más delgado |

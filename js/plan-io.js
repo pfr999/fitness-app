@@ -3,6 +3,10 @@
 
 export const FORMAT = 'recomp-plan';
 
+// objetivo de la fase: interno ↔ formato Recomp
+const GOAL_OUT = { loss: 'perdida', maintain: 'mantenimiento', gain: 'volumen', none: 'sin_objetivo' };
+const GOAL_IN = Object.fromEntries(Object.entries(GOAL_OUT).map(([k, v]) => [v, k]));
+
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number.isFinite(+v) ? +v : NaN);
 
 /** Plan interno (una versión) → formato Recomp. */
@@ -13,6 +17,7 @@ export function exportPlan(v) {
     fase: v.phase || '',
     micro: v.micro || '',
     objetivos: {
+      objetivo: GOAL_OUT[v.targets?.goal] || 'perdida',
       peso_kg: v.targets?.weight_kg ?? null,
       cintura_cm: v.targets?.waist_cm ?? null,
       pasos: v.targets?.steps ?? null,
@@ -21,11 +26,11 @@ export function exportPlan(v) {
       ritmo_pct_semana: v.targets?.rate_pct_week ?? null,
     },
     dieta: {
-      kcal_entreno: v.diet.kcal.train,
-      kcal_descanso: v.diet.kcal.rest,
-      proteina_g: v.diet.protein_g,
-      carbohidratos_g: v.diet.carbs_g,
-      grasas_g: v.diet.fat_g,
+      kcal_entreno: v.diet.kcal?.train ?? null,
+      kcal_descanso: v.diet.kcal?.rest ?? null,
+      proteina_g: v.diet.protein_g ?? null,
+      carbohidratos_g: v.diet.carbs_g ?? null,
+      grasas_g: v.diet.fat_g ?? null,
       modo_comidas: v.diet.meals_mode === 'free' ? 'libres' : 'fijas',
       comidas: (v.diet.meals || []).map((m) => ({ nombre: m.slot, ...(m.portions && Object.keys(m.portions).length ? { porciones: m.portions } : {}), ...(m.target ? { objetivo: { proteina_g: m.target.p, carbohidratos_g: m.target.c, grasas_g: m.target.f } } : {}) })),
       reglas: v.diet.rules || [],
@@ -79,9 +84,14 @@ export function parsePlan(obj) {
       need(!Number.isNaN(n), `objetivos.${k} debe ser un número`);
       t[dst] = n;
     }
+    if ('objetivo' in o) {
+      const g = GOAL_IN[String(o.objetivo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_')];
+      need(g, 'objetivos.objetivo debe ser "perdida", "mantenimiento", "volumen" o "sin_objetivo"');
+      t.goal = g;
+    }
     if ('ritmo_pct_semana' in o) {
       const r = o.ritmo_pct_semana;
-      need(r === null || (Array.isArray(r) && r.length === 2 && r.every((x) => Number.isFinite(+x))), 'objetivos.ritmo_pct_semana debe ser null o [mín, máx]');
+      need(r === null || (Array.isArray(r) && r.length === 2 && r.every((x) => x !== null && Number.isFinite(+x))), 'objetivos.ritmo_pct_semana debe ser null o [mín, máx]');
       t.rate_pct_week = r === null ? null : [Math.min(+r[0], +r[1]), Math.max(+r[0], +r[1])];
     }
     sections.push('objetivos');
@@ -90,10 +100,11 @@ export function parsePlan(obj) {
 
   if (obj.dieta) {
     const d = obj.dieta;
-    const kt = num(d.kcal_entreno), kr = num(d.kcal_descanso);
-    need(kt > 800 && kt < 8000, 'dieta.kcal_entreno fuera de rango');
-    need(kr > 800 && kr < 8000, 'dieta.kcal_descanso fuera de rango');
-    for (const k of ['proteina_g', 'carbohidratos_g', 'grasas_g']) need(num(d[k]) >= 0, `dieta.${k} debe ser un número`);
+    // kcal y macros son opcionales (null = sin objetivo); si vienen, deben ser razonables
+    const kt = num(d.kcal_entreno), kr = num(d.kcal_descanso) ?? kt;
+    need(kt == null || (kt > 800 && kt < 8000), 'dieta.kcal_entreno fuera de rango');
+    need(kr == null || (kr > 800 && kr < 8000), 'dieta.kcal_descanso fuera de rango');
+    for (const k of ['proteina_g', 'carbohidratos_g', 'grasas_g']) need(num(d[k]) == null || num(d[k]) >= 0, `dieta.${k} debe ser un número o null`);
     const meals = (d.comidas || []).map((m, i) => {
       need(m && m.nombre, `dieta.comidas[${i}] sin nombre`);
       const out = { slot: String(m?.nombre || '') };
@@ -102,12 +113,12 @@ export function parsePlan(obj) {
       if (m?.objetivo) out.target = { p: num(m.objetivo.proteina_g) || 0, c: num(m.objetivo.carbohidratos_g) || 0, f: num(m.objetivo.grasas_g) || 0 };
       return out;
     });
-    const kcalMacros = 4 * num(d.proteina_g) + 4 * num(d.carbohidratos_g) + 9 * num(d.grasas_g);
-    if (kt && Math.abs(kcalMacros - kt) > kt * 0.12) warnings.push(`Los macros suman ${Math.round(kcalMacros)} kcal y el objetivo de entreno es ${Math.round(kt)} kcal.`);
+    const kcalMacros = 4 * (num(d.proteina_g) || 0) + 4 * (num(d.carbohidratos_g) || 0) + 9 * (num(d.grasas_g) || 0);
+    if (kt && kcalMacros && [d.proteina_g, d.carbohidratos_g, d.grasas_g].every((x) => num(x) != null) && Math.abs(kcalMacros - kt) > kt * 0.12) warnings.push(`Los macros suman ${Math.round(kcalMacros)} kcal y el objetivo de entreno es ${Math.round(kt)} kcal.`);
     sections.push('dieta');
     ops.push((v) => {
       const free = /libre/i.test(d.modo_comidas || '');
-      v.diet = { kcal: { train: kt, rest: kr }, protein_g: num(d.proteina_g), carbs_g: num(d.carbohidratos_g), fat_g: num(d.grasas_g), meals_mode: free ? 'free' : 'fixed', meals: free ? [] : meals, rules: (d.reglas || []).map(String).filter(Boolean) };
+      v.diet = { kcal: { train: kt, rest: kr }, protein_g: num(d.proteina_g) || null, carbs_g: num(d.carbohidratos_g) || null, fat_g: num(d.grasas_g) || null, meals_mode: free ? 'free' : 'fixed', meals: free ? [] : meals, rules: (d.reglas || []).map(String).filter(Boolean) };
     });
   }
 

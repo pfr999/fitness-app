@@ -7,7 +7,7 @@ import { analyze, weekSummary } from '../engine/analysis.js';
 import { MDC, isRealChange } from '../engine/body.js';
 import { processPhoto, hydratePhotos, forgetPhoto } from '../photos.js';
 import { buildSummary, writeSummary } from '../summary.js';
-import { rpRecommendation } from '../engine/targets.js';
+import { rpRecommendation, goalOf, rateVerdict, bandText } from '../engine/targets.js';
 import { musclesTrained } from '../engine/training.js';
 import { MUSCLES, MUSCLE_LABEL } from '../training/catalog.js';
 import { exercisesOf } from './exercises.js';
@@ -332,26 +332,29 @@ function stepSummary(ctx, d) {
   const ds = sumNow != null && sumPrev != null ? sumNow - sumPrev : null;
   // cifras de la semana revisada (las mismas que el balance), no la tendencia de hoy
   const wb = balanceFor(ctx, addDays(d.weekEnd, -6), d.weekEnd);
-  const loss = wb.weight.pctWeek != null ? -wb.weight.pctWeek : L.rate ? -L.rate.pctWeek : null;
-  const tgt = L.rateTarget || [0.4, 0.7];
-  const inTarget = loss != null && loss >= tgt[0] && loss <= tgt[1];
-  const note = loss == null ? 'Aún no hay datos de peso suficientes.' : !L.rateReliable ? 'Con menos de 14 días de datos el ritmo es orientativo.' : inTarget ? `Dentro del objetivo ${fmt(tgt[0])}–${fmt(tgt[1])} %.` : loss < tgt[0] ? `Por debajo del objetivo ${fmt(tgt[0])}–${fmt(tgt[1])} %.` : `Por encima de ${fmt(tgt[1])} %: riesgo para la masa magra.`;
+  const pct = wb.weight.pctWeek != null ? wb.weight.pctWeek : L.rate ? L.rate.pctWeek : null; // cambio, con signo
+  const band = L.rateTarget; // null = sin objetivo
+  const goal = goalOf(planFor(ctx.store.get(FILES.plan), d.date));
+  const verdict = rateVerdict(band, pct);
+  const note = pct == null ? 'Aún no hay datos de peso suficientes.' : !L.rateReliable ? 'Con menos de 14 días de datos el ritmo es orientativo.' : verdict ? verdict.text : 'Sin objetivo de ritmo: solo el dato.';
+  // la cintura y los pliegues se valoran solo si el objetivo es perder grasa
+  const toneOf = (x) => (goal === 'loss' ? (x < 0 ? 'good' : 'warn') : 'info');
   const wk = weekSummary({ days, plan: ctx.store.get(FILES.plan) }, d.date);
   const t = wk.targets;
 
   const extra = [];
   if (dw != null) extra.push(isRealChange(dw, MDC.waist)
-    ? { tone: dw < 0 ? 'good' : 'warn', title: `Cintura ${signed(dw)} cm`, text: 'Cambio por encima del margen de error de la medida.' }
+    ? { tone: toneOf(dw), title: `Cintura ${signed(dw)} cm`, text: 'Cambio por encima del margen de error de la medida.' }
     : { tone: 'info', title: `Cintura ${signed(dw)} cm: dentro del margen de error`, text: `Cambio mínimo detectable ≈ ${fmt(MDC.waist)} cm. Mira la tendencia de varias semanas.` });
   if (ds != null) extra.push(isRealChange(ds, MDC.sumSkinfolds)
-    ? { tone: ds < 0 ? 'good' : 'warn', title: `Pliegues ${signed(ds)} mm`, text: 'Cambio por encima del margen de error.' }
+    ? { tone: toneOf(ds), title: `Pliegues ${signed(ds)} mm`, text: 'Cambio por encima del margen de error.' }
     : { tone: 'info', title: `Pliegues ${signed(ds)} mm: dentro del margen`, text: `Cambio mínimo detectable ≈ ${fmt(MDC.sumSkinfolds, 0)} mm.` });
   const alerts = [...(a.alerts || []), ...extra];
 
   const row = (l, real, obj, good) => `<tr><td>${l}</td><td class="n ${good == null ? '' : good ? 'up' : 'warn'}">${real}</td><td class="o">${obj}</td></tr>`;
   return `<div class="sum-hero">
       <div class="k">Semana del ${fmtShort(addDays(d.weekEnd, -6))} al ${fmtShort(d.weekEnd)}</div>
-      <div class="big num">${wb.weight.change != null ? `${signed(wb.weight.change)} kg` : '—'}${loss != null ? ` <span style="font-size:20px;opacity:.8">· ${fmt(-loss, 2)} %/sem</span>` : ''}</div>
+      <div class="big num">${wb.weight.change != null ? `${signed(wb.weight.change)} kg` : '—'}${pct != null ? ` <span style="font-size:20px;opacity:.8">· ${signed(pct, 2)} %/sem</span>` : ''}</div>
       <div class="small" style="opacity:.75;margin-bottom:12px">${note}</div>
       <div class="g2">
         <div><span>Tendencia</span><b class="num">${L.trend ? fmt(L.trend.level) + ' kg' : '—'}</b></div>
@@ -364,7 +367,7 @@ function stepSummary(ctx, d) {
     ${renderBalance(ctx, addDays(d.weekEnd, -6), d.weekEnd)}
     <div class="card" hidden><div class="ch"><h2>Semana vs objetivos</h2></div>
       <table class="t"><tr><th>Indicador</th><th style="text-align:right">Real</th><th style="text-align:right">Obj.</th></tr>
-        ${row('Ritmo de pérdida', loss != null ? fmt(loss, 2) + ' %' : '—', `${fmt(tgt[0])}–${fmt(tgt[1])}`, loss != null && L.rateReliable ? inTarget : null)}
+        ${row('Ritmo', pct != null ? signed(pct, 2) + ' %' : '—', bandText(band), pct != null && L.rateReliable && verdict ? verdict.status === 'in' : null)}
         ${row('Pasos / día', wk.steps != null ? fmtK(wk.steps) : '—', t.steps ? fmtK(t.steps) : '—', wk.steps != null && t.steps ? wk.steps >= t.steps * 0.9 : null)}
         ${row('Sesiones', `${wk.sessions}`, t.sessions ?? '—', t.sessions ? wk.sessions >= t.sessions : null)}
         ${row('Sueño', wk.sleep != null ? fmt(wk.sleep) + ' h' : '—', t.sleep_h ? fmt(t.sleep_h) : '—', wk.sleep != null && t.sleep_h ? wk.sleep >= t.sleep_h - 0.3 : null)}

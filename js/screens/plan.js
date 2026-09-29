@@ -3,7 +3,8 @@
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, segValue, icon, ask } from '../ui/ui.js';
 import { addDays, fmtShort, weekStart } from '../dates.js';
 import { defaultMeso, mesoWeek, mesoLength, rirRamp } from '../engine/meso.js';
-import { FILES, currentPlan, newPlanVersion, kcalTarget, versionNumber } from '../model.js';
+import { FILES, currentPlan, newPlanVersion, kcalTarget, versionNumber, planKcal, assumesPlan } from '../model.js';
+import { GOALS, GOAL_LABEL, goalOf, rateBand, bandText, rateVerdict, MAINTAIN_BAND, GAIN_RATE } from '../engine/targets.js';
 import { hallProjection } from '../engine/energy.js';
 import { writeSummary } from '../summary.js';
 import { exercisesOf, musclesLine, datalist, assignSheet, volumeBars } from './exercises.js';
@@ -38,11 +39,11 @@ export function diffText(a, b) {
   if (!a || !b) return '';
   const out = [];
   const kd = (x, y, l) => { if (x !== y) out.push(`${l} ${fmtK(x)} → ${fmtK(y)}`); };
-  kd(a.diet.kcal.train, b.diet.kcal.train, 'kcal entreno');
-  kd(a.diet.kcal.rest, b.diet.kcal.rest, 'kcal descanso');
-  kd(a.diet.protein_g, b.diet.protein_g, 'proteína');
-  kd(a.diet.carbs_g, b.diet.carbs_g, 'carbohidratos');
-  kd(a.diet.fat_g, b.diet.fat_g, 'grasas');
+  kd(a.diet.kcal?.train ?? null, b.diet.kcal?.train ?? null, 'kcal entreno');
+  kd(a.diet.kcal?.rest ?? null, b.diet.kcal?.rest ?? null, 'kcal descanso');
+  kd(a.diet.protein_g ?? null, b.diet.protein_g ?? null, 'proteína');
+  kd(a.diet.carbs_g ?? null, b.diet.carbs_g ?? null, 'carbohidratos');
+  kd(a.diet.fat_g ?? null, b.diet.fat_g ?? null, 'grasas');
   if (JSON.stringify(a.diet.meals) !== JSON.stringify(b.diet.meals) || (a.diet.meals_mode || 'fixed') !== (b.diet.meals_mode || 'fixed')) out.push('comidas');
   if (JSON.stringify(a.diet.rules) !== JSON.stringify(b.diet.rules)) out.push('reglas de dieta');
   const noMeso = (r) => JSON.stringify({ ...r, meso: undefined });
@@ -52,7 +53,9 @@ export function diffText(a, b) {
   for (const n of sb) if (!sa.has(n)) out.push(`+${n}`);
   for (const n of sa) if (!sb.has(n)) out.push(`−${n}`);
   if (!out.some((x) => x.startsWith('+') || x.startsWith('−')) && JSON.stringify(a.supplements) !== JSON.stringify(b.supplements)) out.push('suplementos');
-  if (JSON.stringify(a.targets) !== JSON.stringify(b.targets)) out.push('objetivos');
+  if (goalOf(a) !== goalOf(b)) out.push(`objetivo: ${GOAL_LABEL[goalOf(b)].toLowerCase()}`);
+  const noGoal = (t) => JSON.stringify({ ...(t || {}), goal: undefined });
+  if (noGoal(a.targets) !== noGoal(b.targets)) out.push('objetivos');
   if (a.phase !== b.phase || a.micro !== b.micro) out.push(`fase ${b.phase || '—'}${b.micro ? ` micro ${b.micro}` : ''}`);
   return out.join(', ');
 }
@@ -182,23 +185,26 @@ function renderRecipes(ctx) {
 
 function renderDiet(v) {
   const d = v.diet;
-  const kcalMacros = d.protein_g * 4 + d.carbs_g * 4 + d.fat_g * 9;
+  const kcalMacros = (d.protein_g || 0) * 4 + (d.carbs_g || 0) * 4 + (d.fat_g || 0) * 9;
+  const pk = planKcal(v);
+  const g = (x) => (x ? `${fmtK(x)} g` : '—');
   return `<div class="g2" style="margin-bottom:12px">
       <button class="btn primary" data-quick="kcal">${icon.flame} Ajustar kcal</button>
       <button class="btn secondary" data-quick="diet">${icon.edit} Editar dieta</button>
     </div>
-    <div class="hint" style="margin:-4px 0 12px">«Ajustar kcal» te enseña el ritmo previsto antes de guardar. «Editar dieta» cambia macros, comidas y reglas.</div>
+    <div class="hint" style="margin:-4px 0 12px">«Ajustar kcal» te enseña el ritmo previsto antes de guardar. «Editar dieta» cambia macros, comidas y reglas. Kcal y macros son opcionales.</div>
     <div class="card"><div class="ch"><h2>Objetivos diarios</h2></div>
+      ${!pk ? '<div class="muted small" style="margin:-6px 0 10px">Sin kcal objetivo: Comidas enseña lo que llevas, sin compararlo con nada.</div>' : ''}
       <div class="g2">
-        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Día de entreno</div><div style="font-size:24px;font-weight:800" class="num">${fmtK(d.kcal.train)}</div></div>
-        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Día de descanso</div><div style="font-size:24px;font-weight:800" class="num">${fmtK(d.kcal.rest)}</div></div>
+        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Día de entreno</div><div style="font-size:24px;font-weight:800" class="num">${pk ? fmtK(pk.train) : '—'}</div></div>
+        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Día de descanso</div><div style="font-size:24px;font-weight:800" class="num">${pk ? fmtK(pk.rest) : '—'}</div></div>
       </div>
       <div class="g3" style="margin-top:10px;text-align:center">
-        <div><div class="muted small" style="font-weight:700">Proteína</div><b class="num">${fmtK(d.protein_g)} g</b></div>
-        <div><div class="muted small" style="font-weight:700">Carbos</div><b class="num">${fmtK(d.carbs_g)} g</b></div>
-        <div><div class="muted small" style="font-weight:700">Grasas</div><b class="num">${fmtK(d.fat_g)} g</b></div>
+        <div><div class="muted small" style="font-weight:700">Proteína</div><b class="num">${g(d.protein_g)}</b></div>
+        <div><div class="muted small" style="font-weight:700">Carbos</div><b class="num">${g(d.carbs_g)}</b></div>
+        <div><div class="muted small" style="font-weight:700">Grasas</div><b class="num">${g(d.fat_g)}</b></div>
       </div>
-      <div class="hint">Los macros suman ${fmtK(kcalMacros)} kcal.</div>
+      ${kcalMacros ? `<div class="hint">Los macros suman ${fmtK(kcalMacros)} kcal.</div>` : ''}
     </div>
     <div class="card"><div class="ch"><h2>Comidas</h2><button class="link" data-quick="diet">Editar</button></div>
       ${d.meals_mode === 'free'
@@ -222,19 +228,26 @@ function renderSupp(v) {
 function renderTargets(ctx, v) {
   const t = v.targets || {};
   const a = ctx.analysis();
-  const auto = !t.rate_pct_week;
-  const rate = t.rate_pct_week || a.latest?.rateTarget || [0.4, 0.7];
+  const goal = goalOf(v);
+  const band = rateBand(v, { bfPct: a.body?.bfMid ?? null, sex: ctx.store.get(FILES.config)?.profile?.sex });
   const r = (l, val) => `<tr><td>${l}</td><td class="n">${val}</td></tr>`;
+  const HINT = {
+    loss: 'Pérdida: el ritmo automático depende de tu % graso estimado (más delgado → más lento).',
+    maintain: `Mantenimiento: peso estable (±${fmt(MAINTAIN_BAND, 2)} %/sem). Te avisa si la tendencia se sale 2 semanas seguidas; pasarte de kcal no se marca.`,
+    gain: `Volumen: ganar despacio (${fmt(GAIN_RATE[0], 2)}–${fmt(GAIN_RATE[1], 2)} %/sem) para no sumar grasa de más; pasarte de kcal no se marca.`,
+    none: 'Sin objetivo: solo registras. Ves tus datos y tendencias sin franjas, avisos ni comparaciones con el plan.',
+  };
   return `<div class="card"><div class="ch"><h2>Objetivos</h2><button class="link" data-quick="targets">Editar</button></div>
       <table class="t">
-        ${r('Ritmo de pérdida', `${fmt(rate[0])}–${fmt(rate[1])} %/sem ${auto ? '<span class="badge n">auto</span>' : ''}`)}
-        ${r('Peso objetivo', t.weight_kg ? `${fmt(t.weight_kg)} kg` : '—')}
+        ${r('Objetivo', `<b>${esc(GOAL_LABEL[goal])}</b>`)}
+        ${band ? r('Ritmo', `${esc(bandText(band))} ${band.auto ? '<span class="badge n">auto</span>' : ''}`) : ''}
+        ${goal === 'loss' || goal === 'gain' ? r('Peso objetivo', t.weight_kg ? `${fmt(t.weight_kg)} kg` : '—') : ''}
         ${r('Cintura objetivo', t.waist_cm ? `${fmt(t.waist_cm)} cm` : '—')}
         ${r('Pasos diarios', t.steps ? fmtK(t.steps) : '—')}
         ${r('Sesiones / semana', t.sessions ?? '—')}
         ${r('Sueño', t.sleep_h ? `≥ ${fmt(t.sleep_h)} h` : '—')}
       </table>
-      ${auto ? '<div class="hint">El ritmo automático depende de tu % graso estimado (más delgado → más lento).</div>' : ''}
+      <div class="hint">${HINT[goal]}</div>
     </div>`;
 }
 
@@ -280,27 +293,29 @@ function kcalSheet(ctx) {
   const v = currentPlan(plan(ctx));
   const a = ctx.analysis();
   const L = a.latest || {};
-  let train = v.diet.kcal.train, rest = v.diet.kcal.rest;
+  // sin kcal en el plan se parte del gasto medido (o de 2.000) redondeado a 50
+  const pk = planKcal(v);
+  const start = pk || (() => { const k = L.tdeeReliable ? Math.round(L.tdee.E / 50) * 50 : 2000; return { train: k, rest: k }; })();
+  let train = start.train, rest = start.rest;
   const forecast = () => {
     if (!L.tdeeReliable || !L.trend) return `<div class="forecast a"><div class="row"><span>Previsión disponible cuando haya 21 días de datos de peso.</span></div></div>`;
     const tmp = structuredClone(v); tmp.diet.kcal = { train, rest };
     const I = kcalTarget(tmp, undefined);
-    const goal = v.targets?.weight_kg ?? null;
+    const goal = ['loss', 'gain'].includes(goalOf(v)) ? v.targets?.weight_kg ?? null : null;
     const h = hallProjection({ W0: L.trend.level, E0: L.tdee.E, intake: I, goal, rho: a.rho });
     const lo = hallProjection({ W0: L.trend.level, E0: L.tdee.E + L.tdee.sd, intake: I, rho: a.rho });
     const hi = hallProjection({ W0: L.trend.level, E0: L.tdee.E - L.tdee.sd, intake: I, rho: a.rho });
-    const pct = (-h.rateWeek / L.trend.level) * 100;
-    const [t0, t1] = L.rateTarget;
-    const ok = pct >= t0 && pct <= t1;
-    return `<div class="forecast ${ok ? '' : 'a'}">
+    const pct = (h.rateWeek / L.trend.level) * 100; // cambio previsto, con signo
+    const vd = rateVerdict(L.rateTarget, pct);
+    return `<div class="forecast ${!vd || vd.status === 'in' ? '' : 'a'}">
       <div class="row"><span>Ritmo previsto</span><b class="num">${fmt(h.rateWeek, 2)} kg/sem</b></div>
       <div class="row"><span>Rango (±1σ del gasto)</span><b class="num">${fmt(lo.rateWeek, 2)} a ${fmt(hi.rateWeek, 2)}</b></div>
-      <div class="row"><span>Pérdida % peso/semana</span><b class="num">${fmt(pct, 2)} % ${ok ? '· en objetivo' : `· objetivo ${fmt(t0)}–${fmt(t1)}`}</b></div>
+      <div class="row"><span>% peso/semana</span><b class="num">${pct > 0 ? '+' : ''}${fmt(pct, 2)} %${vd ? (vd.status === 'in' ? ' · en objetivo' : ` · objetivo: ${esc(bandText(L.rateTarget))}`) : ''}</b></div>
       ${goal ? `<div class="row"><span>${fmt(goal)} kg hacia</span><b class="num">${h.days ? fmtShort(addDays(ctx.today(), Math.round(h.days))) : 'no alcanzable'}</b></div>` : ''}
     </div>`;
   };
   const stepper = (id, label, val) => `<div class="muted small" style="font-weight:700;margin-top:10px">${label}</div>
-    <div class="stepperbig" style="margin-top:6px"><button type="button" data-step="${id}" data-d="-50" aria-label="Menos 50">−</button><div class="val"><b class="num" id="${id}">${fmtK(val)}</b><span id="${id}D">sin cambio</span></div><button type="button" data-step="${id}" data-d="50" aria-label="Más 50">+</button></div>`;
+    <div class="stepperbig" style="margin-top:6px"><button type="button" data-step="${id}" data-d="-50" aria-label="Menos 50">−</button><div class="val"><b class="num" id="${id}">${fmtK(val)}</b><span id="${id}D">${pk ? 'sin cambio' : 'nuevo'}</span></div><button type="button" data-step="${id}" data-d="50" aria-label="Más 50">+</button></div>`;
   openSheet(`<h3>Ajustar kcal</h3><div class="muted">Con previsión según tu gasto medido${L.tdeeReliable ? ` (${fmtK(L.tdee.E)} ± ${fmtK(L.tdee.sd)} kcal)` : ''}.</div>
     ${stepper('kT', 'Día de entreno', train)}${stepper('kR', 'Día de descanso', rest)}
     <label class="chk" style="border:0;padding:4px 0 10px"><input type="checkbox" id="kLink" checked><div><b>Mover los dos a la vez</b></div></label>
@@ -310,9 +325,9 @@ function kcalSheet(ctx) {
     bind: (sh) => {
       const paint = () => {
         $('#kT', sh).textContent = fmtK(train); $('#kR', sh).textContent = fmtK(rest);
-        const dT = train - v.diet.kcal.train, dR = rest - v.diet.kcal.rest;
-        $('#kTD', sh).textContent = dT ? `${dT > 0 ? '+' : '−'}${Math.abs(dT)} kcal` : 'sin cambio';
-        $('#kRD', sh).textContent = dR ? `${dR > 0 ? '+' : '−'}${Math.abs(dR)} kcal` : 'sin cambio';
+        const dT = pk ? train - pk.train : null, dR = pk ? rest - pk.rest : null;
+        $('#kTD', sh).textContent = !pk ? 'nuevo' : dT ? `${dT > 0 ? '+' : '−'}${Math.abs(dT)} kcal` : 'sin cambio';
+        $('#kRD', sh).textContent = !pk ? 'nuevo' : dR ? `${dR > 0 ? '+' : '−'}${Math.abs(dR)} kcal` : 'sin cambio';
         $('#kFc', sh).innerHTML = forecast();
       };
       $$('[data-step]', sh).forEach((b) => b.addEventListener('click', () => {
@@ -333,6 +348,8 @@ function dietSheet(ctx) {
   const v = currentPlan(plan(ctx));
   const d = structuredClone(v.diet);
   d.rules ||= [];
+  d.kcal ||= { train: null, rest: null };
+  const val = (x) => (x ?? '');
   let mode = d.meals_mode === 'free' ? 'free' : 'fixed';
   d.meals = (d.meals || []).length ? d.meals : [1, 2, 3].map((n) => ({ slot: `Comida ${n}` }));
   // cada comida: nombre + objetivo opcional (sin objetivo · gramos de macros · porciones)
@@ -346,9 +363,10 @@ function dietSheet(ctx) {
     </div>`; };
   openSheet(`<h3>Dieta</h3>
     <div class="stack" style="margin-top:12px">
-      <div class="g2"><div class="field"><label for="dT">Kcal entreno</label><input class="inp" id="dT" inputmode="numeric" value="${d.kcal.train}"></div><div class="field"><label for="dR">Kcal descanso</label><input class="inp" id="dR" inputmode="numeric" value="${d.kcal.rest}"></div></div>
-      <div class="g3"><div class="field"><label for="dP">Proteína g</label><input class="inp" id="dP" inputmode="numeric" value="${d.protein_g}"></div><div class="field"><label for="dC">Carbos g</label><input class="inp" id="dC" inputmode="numeric" value="${d.carbs_g}"></div><div class="field"><label for="dF">Grasas g</label><input class="inp" id="dF" inputmode="numeric" value="${d.fat_g}"></div></div>
+      <div class="g2"><div class="field"><label for="dT">Kcal entreno</label><input class="inp" id="dT" inputmode="numeric" value="${val(d.kcal.train)}" placeholder="opcional"></div><div class="field"><label for="dR">Kcal descanso</label><input class="inp" id="dR" inputmode="numeric" value="${val(d.kcal.rest)}" placeholder="igual"></div></div>
+      <div class="g3"><div class="field"><label for="dP">Proteína g</label><input class="inp" id="dP" inputmode="numeric" value="${val(d.protein_g)}" placeholder="—"></div><div class="field"><label for="dC">Carbos g</label><input class="inp" id="dC" inputmode="numeric" value="${val(d.carbs_g)}" placeholder="—"></div><div class="field"><label for="dF">Grasas g</label><input class="inp" id="dF" inputmode="numeric" value="${val(d.fat_g)}" placeholder="—"></div></div>
       <div class="hint" id="dSum"></div>
+      <div class="hint">Todo es opcional: deja vacío lo que no quieras fijar (sin kcal, Comidas solo enseña lo que llevas). Si solo pones las de entreno, valen para todos los días.</div>
       <div class="grp">Comidas</div>
       <div class="seg" id="mMode"><button type="button" data-v="fixed" class="${mode === 'fixed' ? 'on' : ''}">Fijas</button><button type="button" data-v="free" class="${mode === 'free' ? 'on' : ''}">Libres (las añado cada día)</button></div>
       <div class="hint" id="mHint"></div>
@@ -388,8 +406,9 @@ function dietSheet(ctx) {
       $('#dSave', sh).addEventListener('click', () => {
         const next = {
           ...d,
-          kcal: { train: int($('#dT', sh).value) || d.kcal.train, rest: int($('#dR', sh).value) || d.kcal.rest },
-          protein_g: int($('#dP', sh).value) ?? d.protein_g, carbs_g: int($('#dC', sh).value) ?? d.carbs_g, fat_g: int($('#dF', sh).value) ?? d.fat_g,
+          // vacío = sin objetivo (null); las kcal de descanso vacías = las de entreno
+          kcal: { train: int($('#dT', sh).value) || null, rest: int($('#dR', sh).value) || int($('#dT', sh).value) || null },
+          protein_g: int($('#dP', sh).value) || null, carbs_g: int($('#dC', sh).value) || null, fat_g: int($('#dF', sh).value) || null,
           meals_mode: mode,
           meals: mode === 'fixed' ? collect() : [],
           rules: $('#dRules', sh).value.split('\n').map((s) => s.trim()).filter(Boolean),
@@ -551,27 +570,65 @@ function suppSheet(ctx, idx, kind = 'supplement') {
 function targetsSheet(ctx) {
   const v = currentPlan(plan(ctx));
   const t = v.targets || {};
-  const auto = !t.rate_pct_week;
+  const goal0 = goalOf(v);
+  let goal = goal0;
+  const manual0 = Array.isArray(t.rate_pct_week);
+  // el ritmo depende del objetivo: estos textos cambian al elegir otro
+  const RATE = {
+    loss: { label: 'Ritmo de pérdida (% peso/semana)', auto: 'Automático (según % graso)', lo: 'Mín. pérdida', hi: 'Máx. pérdida' },
+    maintain: { label: 'Franja de peso estable (% peso/semana)', auto: `Automático (±${fmt(MAINTAIN_BAND, 2)})`, lo: 'Mín. (p. ej. −0,2)', hi: 'Máx. (p. ej. 0,2)' },
+    gain: { label: 'Ritmo de ganancia (% peso/semana)', auto: `Automático (${fmt(GAIN_RATE[0], 2)}–${fmt(GAIN_RATE[1], 2)})`, lo: 'Mín. ganancia', hi: 'Máx. ganancia' },
+  };
+  const rv = (i) => (manual0 ? fmt(t.rate_pct_week[i], 2) : '');
   openSheet(`<h3>Objetivos y fase</h3>
     <div class="stack" style="margin-top:12px">
+      <div class="field"><label>Objetivo</label><div class="chipset" id="tGoal">${GOALS.map(([k, l]) => `<button type="button" data-v="${k}" class="${goal === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>
+        <div class="hint" id="tGoalHint"></div></div>
       <div class="g2"><div class="field"><label for="tPhase">Fase</label><input class="inp" id="tPhase" value="${esc(v.phase || '')}" placeholder="A"></div><div class="field"><label for="tMicro">Microciclo</label><input class="inp" id="tMicro" value="${esc(v.micro || '')}" placeholder="2/6"></div></div>
-      <div class="g2"><div class="field"><label for="tW">Peso objetivo (kg)</label><input class="inp" id="tW" inputmode="decimal" value="${t.weight_kg != null ? fmt(t.weight_kg) : ''}"></div><div class="field"><label for="tWaist">Cintura objetivo (cm)</label><input class="inp" id="tWaist" inputmode="decimal" value="${t.waist_cm != null ? fmt(t.waist_cm) : ''}"></div></div>
+      <div class="g2"><div class="field" id="tWBox"><label for="tW">Peso objetivo (kg)</label><input class="inp" id="tW" inputmode="decimal" value="${t.weight_kg != null ? fmt(t.weight_kg) : ''}"></div><div class="field"><label for="tWaist">Cintura objetivo (cm)</label><input class="inp" id="tWaist" inputmode="decimal" value="${t.waist_cm != null ? fmt(t.waist_cm) : ''}"></div></div>
       <div class="g3"><div class="field"><label for="tSteps">Pasos</label><input class="inp" id="tSteps" inputmode="numeric" value="${t.steps != null ? fmtK(t.steps) : ''}"></div><div class="field"><label for="tSess">Sesiones</label><input class="inp" id="tSess" inputmode="numeric" value="${t.sessions ?? ''}"></div><div class="field"><label for="tSleep">Sueño (h)</label><input class="inp" id="tSleep" inputmode="decimal" value="${t.sleep_h != null ? fmt(t.sleep_h) : ''}"></div></div>
-      <div class="field"><label>Ritmo de pérdida</label><div class="seg" id="tAuto"><button data-v="auto" class="${auto ? 'on' : ''}">Automático (según % graso)</button><button data-v="manual" class="${auto ? '' : 'on'}">Manual</button></div></div>
-      <div class="g2" id="tManual" ${auto ? 'hidden' : ''}><div class="field"><label for="tR0">Mín. %/sem</label><input class="inp" id="tR0" inputmode="decimal" value="${t.rate_pct_week ? fmt(t.rate_pct_week[0], 2) : ''}"></div><div class="field"><label for="tR1">Máx. %/sem</label><input class="inp" id="tR1" inputmode="decimal" value="${t.rate_pct_week ? fmt(t.rate_pct_week[1], 2) : ''}"></div></div>
+      <div id="tRateBox">
+        <div class="field"><label id="tRateL"></label><div class="seg" id="tAuto"><button data-v="auto" class="${manual0 ? '' : 'on'}"></button><button data-v="manual" class="${manual0 ? 'on' : ''}">Manual</button></div></div>
+        <div class="g2" id="tManual" ${manual0 ? '' : 'hidden'} style="margin-top:10px"><div class="field"><label for="tR0" id="tR0L"></label><input class="inp" id="tR0" inputmode="decimal" value="${rv(0)}"></div><div class="field"><label for="tR1" id="tR1L"></label><input class="inp" id="tR1" inputmode="decimal" value="${rv(1)}"></div></div>
+      </div>
       ${reasonField}
       <div class="sheet-actions"><button class="btn primary" id="tSave">Guardar nueva versión</button></div>
     </div>`, {
     bind: (sh) => {
+      const HINT = {
+        loss: 'Perder grasa: franja de ritmo según tu % graso, aviso si vas demasiado rápido o lento, y en Comidas se marca pasarse de kcal.',
+        maintain: 'Mantener el peso: aviso si la tendencia se sale de la franja 2 semanas. Pasarse de kcal no se marca.',
+        gain: 'Volumen: ganar despacio, con aviso si ganas demasiado rápido o lento. Pasarse de kcal no se marca.',
+        none: 'Solo registrar: ves tus datos y tendencias sin franjas, avisos ni comparaciones con el plan. Kcal y macros de la dieta pasan a ser opcionales.',
+      };
+      const paint = () => {
+        $('#tGoalHint', sh).textContent = HINT[goal];
+        $('#tRateBox', sh).hidden = goal === 'none';
+        $('#tWBox', sh).hidden = !(goal === 'loss' || goal === 'gain');
+        if (goal === 'none') return;
+        $('#tRateL', sh).textContent = RATE[goal].label;
+        $('#tAuto button[data-v="auto"]', sh).textContent = RATE[goal].auto;
+        $('#tR0L', sh).textContent = RATE[goal].lo;
+        $('#tR1L', sh).textContent = RATE[goal].hi;
+      };
+      paint();
+      bindSeg(sh, '#tGoal', (val) => {
+        // la franja manual de un objetivo no vale para otro: al cambiar, vuelve a automático
+        if (val !== goal && val !== goal0) { $$('#tAuto button', sh).forEach((b) => b.classList.toggle('on', b.dataset.v === 'auto')); $('#tManual', sh).hidden = true; $('#tR0', sh).value = ''; $('#tR1', sh).value = ''; }
+        goal = val; paint();
+      });
       bindSeg(sh, '#tAuto', (val) => { $('#tManual', sh).hidden = val === 'auto'; });
       $('#tSave', sh).addEventListener('click', () => {
-        const manual = segValue(sh, '#tAuto') === 'manual';
+        const manual = goal !== 'none' && segValue(sh, '#tAuto') === 'manual';
         const r0 = num($('#tR0', sh).value), r1 = num($('#tR1', sh).value);
+        if (manual && (r0 == null || r1 == null)) return toast('Pon el mínimo y el máximo del ritmo, o elige automático');
+        if (manual && goal !== 'maintain' && (r0 < 0 || r1 < 0)) return toast('En pérdida y volumen el ritmo va en positivo (p. ej. 0,5)');
         const next = {
           ...t,
-          weight_kg: num($('#tW', sh).value), waist_cm: num($('#tWaist', sh).value),
+          goal,
+          weight_kg: $('#tWBox', sh).hidden ? t.weight_kg ?? null : num($('#tW', sh).value), waist_cm: num($('#tWaist', sh).value),
           steps: int($('#tSteps', sh).value), sessions: int($('#tSess', sh).value), sleep_h: num($('#tSleep', sh).value),
-          rate_pct_week: manual && r0 != null && r1 != null ? [Math.min(r0, r1), Math.max(r0, r1)] : null,
+          rate_pct_week: manual ? [Math.min(r0, r1), Math.max(r0, r1)] : null,
         };
         const phase = $('#tPhase', sh).value.trim(), micro = $('#tMicro', sh).value.trim();
         if (savePlan(ctx, (p) => { p.targets = next; p.phase = phase; p.micro = micro; }, $('#why', sh).value)) { closeSheet(); ctx.render(); }
@@ -625,7 +682,7 @@ export const CLAUDE_PROMPT = `Cuando cerremos un plan, dámelo en «formato Reco
 {
   "formato": "recomp-plan",
   "fase": "1e", "micro": "1/6",
-  "objetivos": { "peso_kg": 97, "cintura_cm": 91, "pasos": 10000, "sesiones_semana": 5, "sueno_h": 7.5, "ritmo_pct_semana": null },
+  "objetivos": { "objetivo": "perdida", "peso_kg": 97, "cintura_cm": 91, "pasos": 10000, "sesiones_semana": 5, "sueno_h": 7.5, "ritmo_pct_semana": null },
   "dieta": {
     "kcal_entreno": 3150, "kcal_descanso": 2850, "proteina_g": 260, "carbohidratos_g": 330, "grasas_g": 85,
     "modo_comidas": "fijas",
@@ -639,7 +696,7 @@ export const CLAUDE_PROMPT = `Cuando cerremos un plan, dámelo en «formato Reco
   "suplementos": [ { "nombre": "Creatina", "dosis": "5 g", "momento": "Con una comida", "tipo": "suplemento" } ]
 }
 
-Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "ritmo_pct_semana" es null (automático) o [mín, máx] en % de peso por semana; "mesociclo" es opcional ("inicio" un lunes, "semanas" de carga, un RIR por semana, "descarga" añade una semana final con la mitad de series; null lo quita); "modo_comidas" es "fijas" (lista de "comidas", cada una con "objetivo" en gramos, "porciones" o nada) o "libres" (sin lista; se añaden cada día); nunca repartas el total del día entre comidas si no te lo pido; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
+Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "objetivo" es "perdida", "mantenimiento", "volumen" o "sin_objetivo" (solo registro: sin franjas ni avisos); "ritmo_pct_semana" es null (automático según el objetivo) o [mín, máx] en % de peso por semana (en pérdida y volumen, en positivo en la dirección del objetivo; en mantenimiento, con signo, p. ej. [-0.2, 0.2]); kcal y macros de la dieta pueden ser null (sin objetivo); "mesociclo" es opcional ("inicio" un lunes, "semanas" de carga, un RIR por semana, "descarga" añade una semana final con la mitad de series; null lo quita); "modo_comidas" es "fijas" (lista de "comidas", cada una con "objetivo" en gramos, "porciones" o nada) o "libres" (sin lista; se añaden cada día); nunca repartas el total del día entre comidas si no te lo pido; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
 
 async function copyText(text, okMsg) {
   try { await navigator.clipboard.writeText(text); toast(okMsg); }

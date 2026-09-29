@@ -1,18 +1,13 @@
 // Balance de una semana: lo que se revisa en el control semanal. Puro: sin red ni DOM.
 
 import { addDays, range } from '../dates.js';
-import { planFor, kcalTarget, intakeFor, dietStatus, loggedKcal, sumItems } from '../model.js';
+import { planFor, kcalTarget, intakeFor, dietStatus, loggedKcal, sumItems, dayTargets } from '../model.js';
 import { loggedVolume } from './training.js';
 
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 
-/** Objetivo de macros del día: los del plan son de día de entreno; en descanso se escalan salvo la proteína. */
-export function macroTargets(version, trained) {
-  const kcal = kcalTarget(version, trained);
-  const d = version.diet;
-  const k = d.kcal.train ? kcal / d.kcal.train : 1;
-  return { kcal, p: d.protein_g, c: d.carbs_g * k, f: d.fat_g * k };
-}
+/** Objetivo de macros del día (ver dayTargets en model.js). */
+export const macroTargets = (version, trained) => dayTargets(version, trained);
 
 /**
  * Estado de cada día para la tabla de la semana.
@@ -73,7 +68,8 @@ export function weekBalance({ plan, days }, from, to, { analysis = null, adheren
     ? {
         days: macroDays.length,
         kcal: mean(macroDays.map((m) => m.kcal)), p: mean(macroDays.map((m) => m.p)), c: mean(macroDays.map((m) => m.c)), f: mean(macroDays.map((m) => m.f)),
-        target: { kcal: mean(macroTargetDays.map((t) => t.kcal)), p: mean(macroTargetDays.map((t) => t.p)), c: mean(macroTargetDays.map((t) => t.c)), f: mean(macroTargetDays.map((t) => t.f)) },
+        // objetivo: null si el plan no lo tiene (kcal y macros son opcionales)
+        target: Object.fromEntries(['kcal', 'p', 'c', 'f'].map((k) => [k, mean(macroTargetDays.map((t) => t[k]).filter((x) => x != null))])),
       }
     : null;
 

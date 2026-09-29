@@ -23,6 +23,7 @@ export function simulate({ today, weeks = 12, seed = 11, W0 = 90, trueE = 2900, 
   Object.assign(plan.versions[0], { from: start, phase: 'Demo', micro: '1/6', reason: 'Plan de ejemplo' });
   plan.versions[0].diet.kcal = { train: planKcal[0], rest: planKcal[1] };
   plan.versions[0].targets.weight_kg = W0 - 5;
+  plan.versions[0].targets.goal = 'loss'; // la demo simula una fase de pérdida
 
   const days = {};
   const truth = { E: [] };

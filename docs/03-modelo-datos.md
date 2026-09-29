@@ -39,12 +39,14 @@ recomp-data/
 { "versions": [                                  // completas; vigente = última con from <= fecha
   { "v": 3, "from": "AAAA-MM-DD", "phase": "A", "micro": "1/4", "reason": "texto",
     "targets": {
-      "rate_pct_week": null,                     // null = automático según % graso (ver 04 §4)
+      "goal": "loss",                            // loss | maintain | gain | none (sin campo = loss); ver 04 §4
+      "rate_pct_week": null,                     // null = automático según el objetivo; [mín, máx] en % peso/sem:
+                                                 //   pérdida y volumen en positivo; mantenimiento con signo ([-0.2, 0.2])
       "protein_g_per_kg_ffm": [2.3, 3.1], "steps": 10000, "sessions": 5, "sleep_h": 7.5,
       "waist_cm": 91
     },
     "diet": {
-      "kcal": { "train": 3150, "rest": 2850 }, "protein_g": 260, "carbs_g": 330, "fat_g": 85,
+      "kcal": { "train": 3150, "rest": 2850 }, "protein_g": 260, "carbs_g": 330, "fat_g": 85,  // opcionales (null = sin objetivo)
       "meals_mode": "fixed",                     // fixed: lista fija · free: se añaden cada día
       "meals": [ { "slot": "Comida 1", "target": { "p": 50, "c": 80, "f": 20 } }, { "slot": "Intra-entreno", "portions": { "C": 1 } } ],
       "rules": ["texto libre"]                   // objetivo por comida opcional; nunca se reparte el total del día

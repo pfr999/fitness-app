@@ -3,7 +3,8 @@
 
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, icon, alertBox, signed } from '../ui/ui.js';
 import { addDays, fmtShort, fmtDayShort, nextWeekday, range, parseISO } from '../dates.js';
-import { FILES, planFor, dietStatus, kcalTarget } from '../model.js';
+import { FILES, planFor, dietStatus, kcalTarget, assumesPlan } from '../model.js';
+import { goalOf, favours, rateVerdict, bandText } from '../engine/targets.js';
 import { weekBalance } from '../engine/week.js';
 import { adherenceMap } from '../engine/analysis.js';
 import { MUSCLE_LABEL, MUSCLES } from '../training/catalog.js';
@@ -45,6 +46,8 @@ export function renderDays(ctx, from, to) {
   const b = balanceFor(ctx, from, to, { allDays: true }); // la tabla enseña los 7 días (los futuros, apagados)
   const today = ctx.today();
   const pending = b.rows.filter((r) => !r.validated && r.date <= today).length;
+  // «según plan» solo tiene sentido si el plan tiene kcal y un objetivo
+  const canPlan = assumesPlan(planFor(ctx.store.get(FILES.plan), to));
   return `<div class="card">
     <div class="ch"><h2>Día a día</h2><span class="aux">${pending ? `${pending} sin validar` : 'todo validado ✓'}</span></div>
     <div class="muted small" style="margin:-6px 0 8px">Toca un día para revisarlo o corregirlo.</div>
@@ -59,7 +62,7 @@ export function renderDays(ctx, from, to) {
         <span class="dv"><b>${r.trained === true ? (r.sets ? `${r.sets} s.` : '✓') : r.trained === false ? 'Desc.' : '—'}</b><small>entreno</small></span>
       </button>`;
     }).join('')}
-    ${pending ? `<button class="btn secondary sm" id="allPlan" style="width:100%;margin-top:10px">Marcar los ${pending} días sin validar como «según plan»</button>` : ''}
+    ${pending && canPlan ? `<button class="btn secondary sm" id="allPlan" style="width:100%;margin-top:10px">Marcar los ${pending} días sin validar como «según plan»</button>` : ''}
   </div>`;
 }
 
@@ -93,6 +96,7 @@ export function dayReviewSheet(ctx, date, onDone) {
   const meals = (day.meals || []).filter((m) => m.items?.length);
   const logged = meals.length ? day.meals.reduce((a, m) => a + m.items.reduce((s, it) => s + (it.per100.kcal * it.g) / 100, 0), 0) : null;
   const target = kcalTarget(v, day.trained);
+  const canPlan = assumesPlan(v); // sin kcal en el plan (o «Sin objetivo») no hay «según plan» ni «me pasé»
   const st = { diet: ds.status, delta: ds.kcal_delta != null ? Math.abs(ds.kcal_delta) : null, trained: day.trained, session: day.session?.day || null };
   const dietOpt = (k, l) => `<button type="button" data-v="${k}" class="${st.diet === k ? 'on' : ''}">${l}</button>`;
   openSheet(`<h3>${esc(fmtDayShort(date))} · revisar</h3>
@@ -108,9 +112,9 @@ export function dayReviewSheet(ctx, date, onDone) {
         ${day.session?.sets?.length ? `<div class="hint">${day.session.sets.length} series apuntadas ese día.</div>` : ''}
       </div>
 
-      <div class="field"><label>Dieta · objetivo ${fmtK(target)} kcal</label>
+      <div class="field"><label>Dieta${canPlan ? ` · objetivo ${fmtK(target)} kcal` : ''}</label>
         <div class="card flat" style="margin:0 0 8px;padding:10px 12px"><div class="row"><span class="small" style="font-weight:700">${meals.length ? `Apuntado: ${fmtK(logged)} kcal en ${meals.length} ${meals.length === 1 ? 'comida' : 'comidas'}` : 'Nada apuntado ese día'}</span><button class="link" id="rMeals" type="button">Apuntar comidas</button></div></div>
-        <div class="chipset" id="rD">${meals.length ? dietOpt('logged', 'Lo apuntado es todo') : ''}${dietOpt('plan', 'Según plan')}${dietOpt('over', 'Me pasé')}${dietOpt('under', 'Me quedé corto')}${dietOpt('unknown', 'No lo sé')}</div>
+        <div class="chipset" id="rD">${meals.length ? dietOpt('logged', 'Lo apuntado es todo') : ''}${canPlan || ['plan', 'over', 'under'].includes(st.diet) ? `${dietOpt('plan', 'Según plan')}${dietOpt('over', 'Me pasé')}${dietOpt('under', 'Me quedé corto')}` : ''}${dietOpt('unknown', canPlan ? 'No lo sé' : 'No lo apunté todo')}</div>
         <div id="rDelta" ${st.diet === 'over' || st.diet === 'under' ? '' : 'hidden'} style="margin-top:10px">
           <div class="unit-wrap"><input class="inp" id="rDv" inputmode="numeric" value="${st.delta != null ? fmtK(st.delta) : ''}" placeholder="¿Cuánto, aproximadamente?"><span class="u">kcal</span></div>
           <div class="hint">Respecto al plan de ese día. Ej.: cena fuera ≈ 700 más. Si no lo sabes, déjalo vacío y ese día no contará para calcular el gasto.</div>
@@ -184,9 +188,12 @@ export function renderBalance(ctx, from, to) {
   const b = balanceFor(ctx, from, to);
   const e = b.energy, m = b.macros, t = b.training;
   const a = ctx.analysis();
-  const tgtRate = a.latest?.rateTarget;
-  const loss = b.weight.pctWeek != null ? -b.weight.pctWeek : null;
   const v = planFor(ctx.store.get(FILES.plan), to);
+  const goal = goalOf(v);
+  const band = a.latest?.rateTarget; // null = sin objetivo
+  const pctW = b.weight.pctWeek ?? null;
+  const verdict = rateVerdict(band, pctW);
+  const fav = favours(goal, b.weight.change);
   const planned = plannedVolume(v?.routine, exercisesOf(ctx), v?.targets?.sessions).byMuscle;
   const elapsed = Math.max(1, Math.min(7, range(from, to).filter((d) => d <= ctx.today()).length));
   const plannedSoFar = Object.fromEntries(Object.entries(planned).map(([k, x]) => [k, (x * elapsed) / 7]));
@@ -195,13 +202,13 @@ export function renderBalance(ctx, from, to) {
   return `<div class="card">
       <div class="ch"><h2>Balance de la semana</h2><span class="aux">${esc(fmtShort(from))}–${esc(fmtShort(to))}</span></div>
       <div class="g2" style="margin-bottom:12px">
-        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Kcal media / día</div><div style="font-size:24px;font-weight:800" class="num">${e.kcalMean != null ? fmtK(e.kcalMean) : '—'}</div><div class="small muted">objetivo ${e.targetMean != null ? fmtK(e.targetMean) : '—'}</div></div>
-        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Déficit medio</div><div style="font-size:24px;font-weight:800" class="num">${e.deficit != null ? fmtK(e.deficit) : '—'}</div><div class="small muted">${e.tdee != null ? `gasto ${fmtK(e.tdee)}` : 'gasto: faltan datos'}</div></div>
+        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">Kcal media / día</div><div style="font-size:24px;font-weight:800" class="num">${e.kcalMean != null ? fmtK(e.kcalMean) : '—'}</div><div class="small muted">${e.targetMean != null ? `objetivo ${fmtK(e.targetMean)}` : 'sin objetivo'}</div></div>
+        <div class="card flat" style="margin:0;padding:12px"><div class="muted small" style="font-weight:700">${e.deficit != null && e.deficit < 0 ? 'Superávit medio' : 'Déficit medio'}</div><div style="font-size:24px;font-weight:800" class="num">${e.deficit != null ? fmtK(Math.abs(e.deficit)) : '—'}</div><div class="small muted">${e.tdee != null ? `gasto ${fmtK(e.tdee)}` : 'gasto: faltan datos'}</div></div>
       </div>
-      <div class="small muted" style="margin:-4px 0 12px">Kcal: ${e.logged} ${e.logged === 1 ? 'día registrado' : 'días registrados'}, ${e.estimated} estimados${e.unknown ? `, ${e.unknown} sin dato` : ''}${e.pending ? `, <b class="warn">${e.pending} sin validar</b> (cuentan como plan)` : ''}.</div>
+      <div class="small muted" style="margin:-4px 0 12px">Kcal: ${e.logged} ${e.logged === 1 ? 'día registrado' : 'días registrados'}, ${e.estimated} estimados${e.unknown ? `, ${e.unknown} sin dato` : ''}${e.pending ? `, <b class="warn">${e.pending} sin validar</b> (${assumesPlan(v) ? 'cuentan como plan' : 'no cuentan'})` : ''}.</div>
 
       ${m ? `<div class="grp">Macros (media de ${m.days} ${m.days === 1 ? 'día registrado' : 'días registrados'})</div>
-        ${barRow('Proteína', m.p, m.target.p, 'g', { good: m.p >= m.target.p * 0.9 })}
+        ${barRow('Proteína', m.p, m.target.p, 'g', { good: m.target.p != null ? m.p >= m.target.p * 0.9 : null })}
         ${barRow('Carbohidratos', m.c, m.target.c, 'g')}
         ${barRow('Grasas', m.f, m.target.f, 'g')}` : `<div class="muted small" style="margin-bottom:10px">Macros: sin días con las comidas apuntadas completas.</div>`}
 
@@ -213,8 +220,8 @@ export function renderBalance(ctx, from, to) {
       <div class="grp">Peso</div>
       <table class="t">
         <tr><td>Tendencia</td><td class="n">${b.weight.start != null ? `${fmt(b.weight.start)} → ${fmt(b.weight.end)} kg` : '—'}</td></tr>
-        <tr><td>Cambio</td><td class="n ${b.weight.change < 0 ? 'up' : ''}">${b.weight.change != null ? `${signed(b.weight.change)} kg` : '—'}</td></tr>
-        <tr><td>Ritmo</td><td class="n ${loss != null && tgtRate ? (loss >= tgtRate[0] && loss <= tgtRate[1] ? 'up' : 'warn') : ''}">${loss != null ? `${fmt(-loss, 2)} %/sem` : '—'}${tgtRate ? ` <span class="muted">(obj. ${fmt(tgtRate[0])}–${fmt(tgtRate[1])})</span>` : ''}</td></tr>
+        <tr><td>Cambio</td><td class="n ${fav === true ? 'up' : ''}">${b.weight.change != null ? `${signed(b.weight.change)} kg` : '—'}</td></tr>
+        <tr><td>Ritmo</td><td class="n ${verdict ? (verdict.status === 'in' ? 'up' : 'warn') : ''}">${pctW != null ? `${signed(pctW, 2)} %/sem` : '—'}${band ? ` <span class="muted">(obj. ${esc(bandText(band))})</span>` : ''}</td></tr>
         <tr><td>Pesadas</td><td class="n">${b.weight.weighIns}/7</td></tr>
       </table>
 
