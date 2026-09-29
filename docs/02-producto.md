@@ -90,3 +90,11 @@ son opcionales y se añaden solo si no exigen infraestructura.
 - Un control pertenece a la semana del **día de control más cercano** (±3 días): hecho el lunes, cierra
   la semana que terminó el domingo. De lunes a miércoles la pantalla Semana muestra la semana por cerrar.
 - El botón «atrás» del móvil navega dentro de la app (hoja → paso/subpestaña → pestaña).
+
+## Ideas en cola (sin implementar)
+Pedidas por el usuario; se diseñan juntas cuando toque.
+- **Ir a un día concreto:** icono de calendario para saltar a cualquier fecha y ver qué se hizo
+  (comidas, entreno, peso, notas), sin ir día a día.
+- **«Mis alimentos» explícito al añadir comida:** un apartado propio con los alimentos de siempre
+  («sota, caballo y rey»: ~10 que dan adherencia) y guardar uno ahí en un toque. Todo lo que se repite
+  debe costar lo mínimo (comidas guardadas, repetir de otro día…).
