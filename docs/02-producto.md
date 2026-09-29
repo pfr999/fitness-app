@@ -115,3 +115,6 @@ Ver `docs/05-investigacion-apps.md` para el porqué.
 - **v1.4:** mesociclos (Plan → Rutina: semanas con RIR objetivo y descarga; Entreno te dice qué toca),
   recetas con peso cocinado (Añadir → «+ Receta» o ⋯ de una comida), fotos sin conexión, estado de
   guardado solo si hay problema y ritmo objetivo según sexo.
+- **v1.5:** Plan → Recetas (recetas con preparación, comidas guardadas y Mis alimentos, fuera del día);
+  al apuntar una receta, «un plato» o «por ingredientes»; «Desglosar en ingredientes» en un plato ya
+  apuntado; «Lo que más aporta» en Comidas.

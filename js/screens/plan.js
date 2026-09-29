@@ -10,8 +10,11 @@ import { exercisesOf, musclesLine, datalist, assignSheet, volumeBars } from './e
 import { MUSCLES } from '../training/catalog.js';
 import { exportPlan, parsePlan, extractJson } from '../plan-io.js';
 import { resolveExercise, plannedVolume } from '../engine/training.js';
+import { recipeSheet, unitLabel } from './meals.js';
+import { recipeFood, recipeTotals } from '../foods/recipes.js';
+import { macrosFor } from '../foods/db.js';
 
-const TABS = [['rutina', 'Rutina'], ['dieta', 'Dieta'], ['supl', 'Suplem.'], ['obj', 'Objetivos']];
+const TABS = [['rutina', 'Rutina'], ['dieta', 'Dieta'], ['recetas', 'Recetas'], ['supl', 'Suplem.'], ['obj', 'Objetivos']];
 
 function plan(ctx) { return ctx.store.get(FILES.plan); }
 
@@ -71,7 +74,7 @@ export function render(ctx) {
       <button class="btn secondary sm" id="planExport" style="width:100%">Exportar / Claude</button>
     </div>
     <div class="seg" id="planSeg" style="margin-bottom:12px">${TABS.map(([k, l]) => `<button data-v="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-  const body = tab === 'dieta' ? renderDiet(v) : tab === 'supl' ? renderSupp(v) : tab === 'obj' ? renderTargets(ctx, v) : renderRoutine(ctx, v);
+  const body = tab === 'recetas' ? renderRecipes(ctx) : tab === 'dieta' ? renderDiet(v) : tab === 'supl' ? renderSupp(v) : tab === 'obj' ? renderTargets(ctx, v) : renderRoutine(ctx, v);
   return head + body;
 }
 
@@ -155,6 +158,28 @@ function mesoSheet(ctx, { fresh = false } = {}) {
   });
 }
 
+// ---------------------------------------------------------------- recetas, comidas guardadas y mis alimentos
+function renderRecipes(ctx) {
+  const doc = ctx.store.get(FILES.foods) || {};
+  const byName = (a, b) => a.name.localeCompare(b.name, 'es');
+  const recipes = (doc.recipes || []).filter((r) => r.items?.length).map((r, i) => ({ r, i })).sort((a, b) => byName(a.r, b.r));
+  const saved = (doc.saved_meals || []).map((r, i) => ({ r, i })).sort((a, b) => byName(a.r, b.r));
+  const favs = doc.favorites || [];
+  const ingr = (r) => esc(r.items.slice(0, 4).map((x) => x.name.split(',')[0]).join(' · ') + (r.items.length > 4 ? ` · +${r.items.length - 4}` : ''));
+  return `<div class="card"><div class="ch"><h2>Recetas</h2><button class="btn primary sm" id="recNew">${icon.plus} Nueva</button></div>
+      <div class="muted small" style="margin:-6px 0 8px">Tus platos de siempre, preparados con calma: ingredientes, preparación y, si cocinas para varios días, el peso cocinado. Al apuntar eliges si van como plato o por ingredientes (y ajustas lo de ese día).</div>
+      ${recipes.map(({ r, i }) => { const f = recipeFood(r), t = recipeTotals(r); return `<button class="rcp" data-rec="${i}"><b>${esc(r.name)}</b><span>${ingr(r)}</span><small>${fmtK(f.per100.kcal)} kcal/100 g · P ${fmt(f.per100.p)}${f.units ? ` · ración ${fmtK(f.units[0].g)} g = ${fmtK(t.kcal / r.servings)} kcal` : ''}${r.steps ? ' · con preparación' : ''}</small></button>`; }).join('') || '<div class="empty-meal">Todavía ninguna. Crea la primera con «Nueva».</div>'}
+    </div>
+    <div class="card"><div class="ch"><h2>Comidas guardadas</h2><button class="btn secondary sm" id="smNew">${icon.plus} Nueva</button></div>
+      <div class="muted small" style="margin:-6px 0 8px">Alimentos que sueles comer juntos (p. ej. tu desayuno). Se añaden sueltos, cada uno con su cantidad.</div>
+      ${saved.map(({ r, i }) => { const t = recipeTotals(r); return `<button class="rcp" data-sm="${i}"><b>${esc(r.name)}</b><span>${ingr(r)}</span><small>${fmtK(t.kcal)} kcal · P ${fmtK(t.p)}</small></button>`; }).join('') || '<div class="empty-meal">Ninguna. También se crean desde el ⋯ de una comida → «Guardar como comida».</div>'}
+    </div>
+    <div class="card"><div class="ch"><h2>Mis alimentos</h2><span class="aux">${favs.length}</span></div>
+      <div class="muted small" style="margin:-6px 0 8px">Tus fijos con su cantidad. Se añaden con la ⭐ al elegir la cantidad de un alimento.</div>
+      ${favs.map((f, i) => { const x = macrosFor(f.food.per100, f.g); return `<div class="row-edit"><div class="t"><b>${esc(f.food.name)}</b><span>${f.unit ? `${fmt(f.unit.n, f.unit.n % 1 ? 1 : 0)} ${esc(unitLabel(f.unit.name, f.unit.n))} · ` : ''}${fmtK(f.g)} g · ${fmtK(x.kcal)} kcal · P ${fmtK(x.p)}</span></div><div class="ops"><button class="mini danger" data-favdel="${i}" aria-label="Quitar ${esc(f.food.name)}">${icon.trash}</button></div></div>`; }).join('') || '<div class="empty-meal">Ninguno todavía.</div>'}
+    </div>`;
+}
+
 function renderDiet(v) {
   const d = v.diet;
   const kcalMacros = d.protein_g * 4 + d.carbs_g * 4 + d.fat_g * 9;
@@ -222,6 +247,18 @@ export function bind(root, ctx) {
   $$('#dayTabs button', root).forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.v === 'new') return daySheet(ctx, -1);
     ctx.state.planDay = +b.dataset.v; ctx.render();
+  }));
+  const doc = () => ctx.store.get(FILES.foods) || {};
+  const done = () => ctx.render();
+  $('#recNew', root)?.addEventListener('click', () => recipeSheet(ctx, null, { onDone: done }));
+  $$('[data-rec]', root).forEach((b) => b.addEventListener('click', () => recipeSheet(ctx, doc().recipes[+b.dataset.rec], { onDone: done })));
+  $('#smNew', root)?.addEventListener('click', () => recipeSheet(ctx, null, { kind: 'saved', onDone: done }));
+  $$('[data-sm]', root).forEach((b) => b.addEventListener('click', () => recipeSheet(ctx, doc().saved_meals[+b.dataset.sm], { kind: 'saved', onDone: done })));
+  $$('[data-favdel]', root).forEach((b) => b.addEventListener('click', () => {
+    const f = doc().favorites[+b.dataset.favdel];
+    ctx.store.update(FILES.foods, (d) => { d.favorites = (d.favorites || []).filter((x) => x !== undefined && x.food.id !== f.food.id); if (!d.favorites.length) delete d.favorites; return d; }, `Quita de Mis alimentos: ${f.food.name}`);
+    ctx.render();
+    toast(`${f.food.name} quitado`, { action: { label: 'Deshacer', fn: () => { ctx.store.update(FILES.foods, (d) => { d.favorites = [...(d.favorites || []), f]; return d; }, `Vuelve a Mis alimentos: ${f.food.name}`); ctx.render(); } } });
   }));
   $('#mesoEdit', root)?.addEventListener('click', () => mesoSheet(ctx));
   $('#mesoNew', root)?.addEventListener('click', () => mesoSheet(ctx, { fresh: true }));

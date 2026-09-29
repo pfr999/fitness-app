@@ -60,7 +60,7 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 - \`kind\`: \`supplement\` o \`medication\`. Porciones: P proteína, C carbohidrato, G grasa, F fruta, L lácteo.
 - Comidas: \`meals_mode\` \`fixed\` (lista \`meals\`, cada una con \`target\` en gramos, \`portions\` o nada) o \`free\`
   (\`meals\` vacío: se añaden cada día). **No repartas** el objetivo del día entre comidas salvo que lo pida.
-- Recetas (\`recipes\` en foods.json): \`{ "id": "rec:…", "name", "items": [ingredientes en crudo], "cooked_g": 1400, "servings": 4 }\`;
+- Recetas (\`recipes\` en foods.json): \`{ "id": "rec:…", "name", "items": [ingredientes en crudo], "steps": "preparación", "cooked_g": 1400, "servings": 4 }\`;
   en los días se apuntan como \`"food": "rec:…"\` con los gramos cocinados que se sirven.
 - Comidas guardadas: \`{ "id": "m:…", "name": "Desayuno de siempre", "items": [ …mismo formato que en los días… ] }\`.
   Un registro con \`"quick": true\` es un «añadido rápido» (solo cifras, \`g\` = 100 y \`per100\` = los totales).

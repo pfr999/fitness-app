@@ -27,3 +27,14 @@ test('sin peso cocinado usa la suma en crudo', () => {
   assert.equal(recipeFood(x).per100.kcal, 190);
   assert.equal(recipeFood(x).units, undefined);
 });
+
+test('receta por ingredientes: escala a lo que te sirves', async () => {
+  const { recipeItemsFor, topContributors } = await import('../js/foods/recipes.js');
+  const items = recipeItemsFor(r, 500); // 500 g de 2500 cocinados = 1/5
+  assert.deepEqual(items.map((x) => x.g), [100, 200]);
+  assert.equal(r.items[0].g, 500, 'no toca la receta');
+  const top = topContributors([...items, { food: 'pollo', name: 'Pollo crudo', g: 100, per100: { kcal: 110, p: 23, c: 0, f: 2 } }], 'p');
+  assert.equal(top[0].name, 'Pollo crudo');
+  assert.equal(Math.round(top[0].value), 69);
+  assert.ok(Math.abs(top.reduce((a, x) => a + x.share, 0) - 1) < 1e-9);
+});

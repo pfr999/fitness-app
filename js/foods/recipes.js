@@ -25,3 +25,29 @@ export function recipeFood(r) {
     ...(r.servings > 0 && w ? { units: [{ name: 'ración', g: Math.round((w / r.servings) * 10) / 10 }] } : {}),
   };
 }
+
+/**
+ * Ingredientes que corresponden a `grams` de la receta (cocinada), para apuntarla «por ingredientes»
+ * y poder ajustar cada uno ese día.
+ */
+export function recipeItemsFor(r, grams) {
+  const w = recipeWeight(r);
+  const k = w ? grams / w : 0;
+  return (r.items || []).map((it) => ({ ...structuredClone(it), g: Math.round(it.g * k * 10) / 10 })).filter((it) => it.g > 0);
+}
+
+/** Qué alimentos aportan más de `key` (p, kcal, c, f) en una lista de registros. [{name, value, share}] */
+export function topContributors(items, key = 'p', n = 5) {
+  const by = new Map();
+  let total = 0;
+  for (const it of items || []) {
+    const v = (it.per100?.[key] || 0) * (it.g || 0) / 100;
+    if (!v) continue;
+    total += v;
+    const k = it.food || it.name;
+    const cur = by.get(k) || { name: it.name, value: 0 };
+    cur.value += v;
+    by.set(k, cur);
+  }
+  return [...by.values()].sort((a, b) => b.value - a.value).slice(0, n).map((x) => ({ ...x, share: total ? x.value / total : 0 }));
+}
