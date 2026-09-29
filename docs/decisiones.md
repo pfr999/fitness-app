@@ -76,3 +76,8 @@ Formato: fecha · decisión · motivo · alternativas descartadas.
 | 71 | 2026-09-29 | Gasto con confianza visible y frase de por qué cambió; balance de 30 días «¿cumplo el plan?» / «¿funciona el plan?» | Un gasto que cambia sin explicación genera desconfianza | Solo el número |
 | 72 | 2026-09-29 | Se quita «pantalla encendida» en el entreno (revisa #68) | El usuario bloquea el móvil y lo guarda entre series: no aporta | Mantenerla |
 | 73 | 2026-09-29 | El descanso ya no arranca solo al marcar ✓: se lanza a mano (1 · 1,5 · 2 · 3 min) (revisa #68) | El usuario suele apuntar las series al acabar el ejercicio: el automático se disparaba sin sentido | Automático |
+| 74 | 2026-09-29 | El estado de guardado solo se enseña si hay problema (sin conexión / error) | «Guardado» siempre visible ocupaba sitio sin aportar | Siempre visible |
+| 75 | 2026-09-29 | Ritmo automático según sexo: en mujeres, cortes de % graso +9 puntos (22 / 29) | Más grasa esencial en mujeres (~12 % vs ~3 %) | Mismos cortes |
+| 76 | 2026-09-29 | Fotos sin conexión: se guardan en el móvil y se suben solas | Los datos ya funcionaban sin red; las fotos no | Pedir repetir la foto |
+| 77 | 2026-09-29 | Mesociclo en la rutina (`routine.meso`): semanas de carga con RIR objetivo y descarga final (mitad de series, −10 % peso, RPE 6); las semanas de descarga no sirven de referencia | Estructura de bloques tipo RP sin rigidez: todo editable | Progresión sin bloques |
+

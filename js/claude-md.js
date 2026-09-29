@@ -2,7 +2,7 @@
 // datos como CLAUDE.md. Así, al trabajar sobre el repo, Claude sabe qué es cada fichero y cómo cambiarlo
 // sin romper nada. Cambia DATA_DOC_VERSION cuando cambie el modelo de datos.
 
-export const DATA_DOC_VERSION = 6;
+export const DATA_DOC_VERSION = 7;
 
 export const CLAUDE_MD = `# Recomp · repo de datos
 
@@ -48,12 +48,15 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
             "meals_mode": "fixed",
             "meals": [ { "slot": "Comida 1", "target": { "p": 50, "c": 80, "f": 20 } }, { "slot": "Intra-entreno", "portions": { "C": 1 } }, { "slot": "Comida 3" } ],
             "rules": [ "…" ] },
-  "routine": { "days": [ { "name": "Día 1 · Pierna", "items": [
+  "routine": { "meso": { "start": "2026-10-05", "weeks": 4, "rir": [3, 2, 2, 1], "deload": true },
+    "days": [ { "name": "Día 1 · Pierna", "items": [
       { "name": "Sentadilla trasera", "ex": "sentadilla", "sets": 4, "reps": [6, 8], "rpe": 8, "note": "…" } ] } ] },
   "supplements": [ { "name": "Creatina", "dose": "5 g", "timing": "Con una comida", "kind": "supplement" } ] }
 \`\`\`
 - Si ya existe una versión con \`from\` = hoy, **modifica esa** (mismo \`v\`) y añade una entrada a su \`changes\`.
 - \`rate_pct_week\`: \`null\` = automático según % graso; o \`[mín, máx]\` en % de peso por semana.
+- \`routine.meso\` (opcional): mesociclo que empieza en \`start\` (lunes) con \`weeks\` semanas de carga, un RIR objetivo por
+  semana (\`rir\`, RIR 2 ≈ RPE 8) y, si \`deload\`, una semana final de descarga (mitad de series, ~10 % menos de peso).
 - \`kind\`: \`supplement\` o \`medication\`. Porciones: P proteína, C carbohidrato, G grasa, F fruta, L lácteo.
 - Comidas: \`meals_mode\` \`fixed\` (lista \`meals\`, cada una con \`target\` en gramos, \`portions\` o nada) o \`free\`
   (\`meals\` vacío: se añaden cada día). **No repartas** el objetivo del día entre comidas salvo que lo pida.

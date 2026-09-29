@@ -31,6 +31,7 @@ export function exportPlan(v) {
       reglas: v.diet.rules || [],
     },
     rutina: {
+      ...(v.routine.meso ? { mesociclo: { inicio: v.routine.meso.start, semanas: v.routine.meso.weeks, rir: v.routine.meso.rir, descarga: !!v.routine.meso.deload } } : {}),
       dias: (v.routine.days || []).map((d) => ({
         nombre: d.name,
         ejercicios: d.items.map((it) => ({ nombre: it.name, series: it.sets, reps: it.reps, rpe: it.rpe ?? null, ...(it.note ? { nota: it.note } : {}) })),
@@ -128,8 +129,27 @@ export function parsePlan(obj) {
         }),
       };
     });
+    // mesociclo: si no viene, se conserva el que hubiera; null lo quita
+    let meso;
+    if ('mesociclo' in obj.rutina) {
+      const m = obj.rutina.mesociclo;
+      if (m === null) meso = null;
+      else {
+        const weeks = num(m?.semanas);
+        need(/^\d{4}-\d{2}-\d{2}$/.test(m?.inicio || ''), 'rutina.mesociclo.inicio debe ser una fecha AAAA-MM-DD');
+        need(weeks >= 1 && weeks <= 12, 'rutina.mesociclo.semanas debe estar entre 1 y 12');
+        const rir = Array.isArray(m?.rir) ? m.rir.map(Number) : null;
+        need(!rir || (rir.length === weeks && rir.every((x) => x >= 0 && x <= 5)), 'rutina.mesociclo.rir: un RIR (0–5) por semana de carga');
+        meso = { start: m?.inicio, weeks, ...(rir ? { rir } : {}), deload: m?.descarga !== false };
+      }
+    }
     sections.push('rutina');
-    ops.push((v) => { v.routine = { days: out }; });
+    ops.push((v) => {
+      const keep = v.routine?.meso;
+      v.routine = { days: out };
+      if (meso) v.routine.meso = meso;
+      else if (meso === undefined && keep) v.routine.meso = keep;
+    });
   }
 
   if (obj.suplementos) {

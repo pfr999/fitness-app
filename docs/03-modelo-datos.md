@@ -49,7 +49,8 @@ recomp-data/
       "meals": [ { "slot": "Comida 1", "target": { "p": 50, "c": 80, "f": 20 } }, { "slot": "Intra-entreno", "portions": { "C": 1 } } ],
       "rules": ["texto libre"]                   // objetivo por comida opcional; nunca se reparte el total del día
     },
-    "routine": { "days": [ { "name": "Día 1", "items": [
+    "routine": { "meso": { "start": "2026-10-05", "weeks": 4, "rir": [3, 2, 2, 1], "deload": true },  // mesociclo (opcional)
+      "days": [ { "name": "Día 1", "items": [
       { "name": "Peso muerto rumano", "sets": 4, "reps": [7, 9], "rpe": 9, "note": "" } ] } ] },
       // MVP: el ejercicio se identifica por nombre; en la fase 3 se enlaza al catálogo (exercises.json)
     "supplements": [ { "name": "", "dose": "", "timing": "", "kind": "supplement|medication" } ]

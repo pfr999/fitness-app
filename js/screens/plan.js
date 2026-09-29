@@ -1,7 +1,8 @@
 // Plan: rutina, dieta, suplementos/medicación y objetivos. Cada cambio crea una versión con fecha y motivo.
 
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, closeSheet, bindSeg, segValue, icon, ask } from '../ui/ui.js';
-import { addDays, fmtShort } from '../dates.js';
+import { addDays, fmtShort, weekStart } from '../dates.js';
+import { defaultMeso, mesoWeek, mesoLength, rirRamp } from '../engine/meso.js';
 import { FILES, currentPlan, newPlanVersion, kcalTarget, versionNumber } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
 import { writeSummary } from '../summary.js';
@@ -41,7 +42,9 @@ export function diffText(a, b) {
   kd(a.diet.fat_g, b.diet.fat_g, 'grasas');
   if (JSON.stringify(a.diet.meals) !== JSON.stringify(b.diet.meals) || (a.diet.meals_mode || 'fixed') !== (b.diet.meals_mode || 'fixed')) out.push('comidas');
   if (JSON.stringify(a.diet.rules) !== JSON.stringify(b.diet.rules)) out.push('reglas de dieta');
-  if (JSON.stringify(a.routine) !== JSON.stringify(b.routine)) out.push('rutina');
+  const noMeso = (r) => JSON.stringify({ ...r, meso: undefined });
+  if (noMeso(a.routine) !== noMeso(b.routine)) out.push('rutina');
+  if (JSON.stringify(a.routine.meso || null) !== JSON.stringify(b.routine.meso || null)) out.push(b.routine.meso ? `mesociclo ${b.routine.meso.weeks}${b.routine.meso.deload ? '+1' : ''} semanas desde ${fmtShort(b.routine.meso.start)}` : 'sin mesociclo');
   const sa = new Set(a.supplements.map((s) => s.name)), sb = new Set(b.supplements.map((s) => s.name));
   for (const n of sb) if (!sa.has(n)) out.push(`+${n}`);
   for (const n of sa) if (!sb.has(n)) out.push(`−${n}`);
@@ -79,7 +82,7 @@ function renderRoutine(ctx, v) {
   const d = days[i];
   const exs = exercisesOf(ctx);
   const vol = plannedVolume(v.routine, exs, v.targets?.sessions);
-  return `<div class="daytabs" id="dayTabs">${days.map((x, k) => `<button data-v="${k}" class="${k === i ? 'on' : ''}">${esc(x.name)}</button>`).join('')}<button data-v="new" aria-label="Añadir día">${icon.plus}</button></div>
+  return `${mesoCard(ctx, v)}<div class="daytabs" id="dayTabs">${days.map((x, k) => `<button data-v="${k}" class="${k === i ? 'on' : ''}">${esc(x.name)}</button>`).join('')}<button data-v="new" aria-label="Añadir día">${icon.plus}</button></div>
     <div class="card"><div class="ch"><h2>${esc(d.name)}</h2><span class="aux">${d.items.reduce((a, x) => a + (x.sets || 0), 0)} series</span></div>
       ${d.items.map((x, k) => { const ex = resolveExercise(x, exs); return `<div class="pe"><span class="ex-n">${k + 1}</span><div class="ex-t"><b>${esc(x.name)}</b><span>${esc(x.sets)} × ${esc((x.reps || []).join('–'))}${x.rpe ? ` · RPE ${esc(x.rpe)}` : ''}</span>
         ${ex ? `<div class="muted small" style="font-weight:600">${esc(musclesLine(ex))}</div>` : `<div><button class="link" data-assign="${esc(x.name)}" style="color:var(--amber);padding:2px 0">Sin músculos asignados · Asignar</button></div>`}
@@ -90,6 +93,66 @@ function renderRoutine(ctx, v) {
       ${volumeBars(vol.byMuscle)}
       <div class="muted small" style="margin-top:8px">Con ${esc(v.targets?.sessions || days.length)} sesiones por semana (Objetivos) repartidas entre los ${days.length} días de la rutina. Franja verde: 10–20 series (Pelland 2025); el trabajo indirecto cuenta ½.${vol.unknown.length ? ` Sin contar (sin músculos asignados): ${esc(vol.unknown.join(', '))}.` : ''}</div>
     </div>`;
+}
+
+// ---------------------------------------------------------------- mesociclo
+function mesoCard(ctx, v) {
+  const m = v.routine.meso;
+  if (!m) return `<div class="card"><div class="ch"><h2>Mesociclo</h2><span class="aux">sin configurar</span></div>
+    <div class="muted small" style="margin:-6px 0 12px">Bloques de 4–6 semanas: el esfuerzo sube cada semana (menos repeticiones en reserva, RIR) y la última es de descarga para recuperar. En Entreno verás en qué semana estás y qué esfuerzo toca.</div>
+    <button class="btn secondary sm" id="mesoEdit" style="width:100%">Configurar mesociclo</button></div>`;
+  const w = mesoWeek(m, ctx.today());
+  const total = mesoLength(m);
+  const cells = Array.from({ length: total }, (_, i) => {
+    const dl = m.deload && i === total - 1;
+    const cur = w && !w.done && !w.before && w.week === i + 1;
+    return `<div class="mw ${cur ? 'on' : ''} ${dl ? 'mdl' : ''} ${w && (w.done || w.week > i + 1) ? 'past' : ''}"><b>S${i + 1}</b><span>${dl ? 'Descarga' : `RIR ${m.rir?.[i] ?? rirRamp(m.weeks)[i]}`}</span></div>`;
+  }).join('');
+  const status = w.before ? `Empieza el ${fmtShort(m.start)}` : w.done ? 'Terminado: toca empezar otro' : w.deload ? `Semana ${w.week} de ${total}: descarga` : `Semana ${w.week} de ${total} · RIR ${w.rir} (RPE ${w.rpe})`;
+  return `<div class="card"><div class="ch"><h2>Mesociclo</h2><span class="aux">desde ${esc(fmtShort(m.start))}</span></div>
+    <div class="small" style="font-weight:800;margin:-6px 0 10px;color:${w.done ? 'var(--amber)' : 'var(--accent)'}">${status}</div>
+    <div class="mweeks" style="grid-template-columns:repeat(${total},minmax(0,1fr))">${cells}</div>
+    ${m.deload ? '<div class="muted small" style="margin-top:8px">Descarga: la mitad de series y ~10 % menos de peso, lejos del fallo (RPE 6).</div>' : ''}
+    <div class="g2" style="margin-top:12px"><button class="btn secondary sm" id="mesoEdit" style="width:100%">Editar</button><button class="btn ${w.done ? 'primary' : 'secondary'} sm" id="mesoNew" style="width:100%">Empezar otro</button></div></div>`;
+}
+
+function mesoSheet(ctx, { fresh = false } = {}) {
+  const v = currentPlan(plan(ctx));
+  const today = ctx.today();
+  const cur = v.routine.meso;
+  const w = cur && mesoWeek(cur, today);
+  // uno nuevo empieza este lunes si el anterior acabó (o no hay); si no, el lunes siguiente
+  const nextStart = !cur || w?.done ? weekStart(today) : addDays(weekStart(today), 7);
+  let m = fresh || !cur ? defaultMeso(nextStart, cur?.weeks || 4) : structuredClone(cur);
+  if (fresh && cur) m.deload = cur.deload;
+  const paint = (sh) => {
+    $('#msWeeks', sh).innerHTML = [3, 4, 5, 6].map((n) => `<button type="button" data-v="${n}" class="${m.weeks === n ? 'on' : ''}">${n}</button>`).join('');
+    $('#msRir', sh).innerHTML = m.rir.map((r, i) => `<div class="msr"><span>Semana ${i + 1}</span><div class="chipset sm">${[4, 3, 2, 1, 0].map((x) => `<button type="button" data-w="${i}" data-r="${x}" class="${r === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>`).join('') + (m.deload ? `<div class="msr"><span>Semana ${m.weeks + 1}</span><b style="font-size:13px">Descarga</b></div>` : '');
+    $$('#msWeeks button', sh).forEach((b) => b.addEventListener('click', () => { m.weeks = +b.dataset.v; m.rir = rirRamp(m.weeks); paint(sh); }));
+    $$('#msRir [data-r]', sh).forEach((b) => b.addEventListener('click', () => { m.rir[+b.dataset.w] = +b.dataset.r; paint(sh); }));
+  };
+  openSheet(`<h3>${fresh || !cur ? 'Mesociclo nuevo' : 'Editar mesociclo'}</h3>
+    <div class="muted">RIR = repeticiones que te quedan en reserva al acabar la serie (RIR 2 ≈ RPE 8). Lo normal: empezar en 3 y acabar en 1.</div>
+    <div class="stack" style="margin-top:12px">
+      <div class="field"><label for="msStart">Empieza (lunes)</label><input class="inp" type="date" id="msStart" value="${m.start}"></div>
+      <div class="field"><label>Semanas de carga</label><div class="chipset" id="msWeeks"></div></div>
+      <div class="field"><label>Semana de descarga al final</label><div class="seg" id="msDl"><button data-v="1" class="${m.deload ? 'on' : ''}">Sí</button><button data-v="0" class="${m.deload ? '' : 'on'}">No</button></div></div>
+      <div class="field"><label>RIR objetivo por semana</label><div id="msRir"></div></div>
+      ${cur && !fresh ? '<button class="link" id="msOff" style="color:var(--amber)">Quitar el mesociclo</button>' : ''}
+      <div class="sheet-actions"><button class="btn primary" id="msSave">Guardar nueva versión</button></div>
+    </div>`, {
+    bind: (sh) => {
+      paint(sh);
+      bindSeg(sh, '#msDl', (x) => { m.deload = x === '1'; paint(sh); });
+      $('#msOff', sh)?.addEventListener('click', () => { if (savePlan(ctx, (p) => { delete p.routine.meso; }, 'Quita el mesociclo')) { closeSheet(); ctx.render(); } });
+      $('#msSave', sh).addEventListener('click', () => {
+        const start = $('#msStart', sh).value;
+        if (!start) return toast('Pon la fecha de inicio');
+        m.start = weekStart(start);
+        if (savePlan(ctx, (p) => { p.routine.meso = structuredClone(m); }, `Mesociclo ${m.weeks}${m.deload ? '+1' : ''} semanas desde ${fmtShort(m.start)}`)) { closeSheet(); ctx.render(); }
+      });
+    },
+  });
 }
 
 function renderDiet(v) {
@@ -160,6 +223,8 @@ export function bind(root, ctx) {
     if (b.dataset.v === 'new') return daySheet(ctx, -1);
     ctx.state.planDay = +b.dataset.v; ctx.render();
   }));
+  $('#mesoEdit', root)?.addEventListener('click', () => mesoSheet(ctx));
+  $('#mesoNew', root)?.addEventListener('click', () => mesoSheet(ctx, { fresh: true }));
   $$('[data-editday]', root).forEach((b) => b.addEventListener('click', () => daySheet(ctx, +b.dataset.editday)));
   $$('[data-assign]', root).forEach((b) => b.addEventListener('click', () => assignSheet(ctx, b.dataset.assign, () => ctx.render())));
   $$('[data-supp]', root).forEach((b) => b.addEventListener('click', () => suppSheet(ctx, +b.dataset.supp, b.dataset.kind)));
@@ -530,13 +595,14 @@ export const CLAUDE_PROMPT = `Cuando cerremos un plan, dámelo en «formato Reco
     "comidas": [ { "nombre": "Comida 1", "objetivo": { "proteina_g": 50, "carbohidratos_g": 80, "grasas_g": 20 } }, { "nombre": "Intra-entreno", "porciones": { "C": 1 } }, { "nombre": "Comida 3" } ],
     "reglas": [ "Comida libre opcional el domingo en la cena (máx. 1.200 kcal)" ]
   },
-  "rutina": { "dias": [ { "nombre": "Día 1 · Pierna", "ejercicios": [
+  "rutina": { "mesociclo": { "inicio": "2026-10-05", "semanas": 4, "rir": [3, 2, 2, 1], "descarga": true },
+    "dias": [ { "nombre": "Día 1 · Pierna", "ejercicios": [
     { "nombre": "Sentadilla trasera", "series": 4, "reps": [6, 8], "rpe": 8, "nota": "barra alta" }
   ] } ] },
   "suplementos": [ { "nombre": "Creatina", "dosis": "5 g", "momento": "Con una comida", "tipo": "suplemento" } ]
 }
 
-Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "ritmo_pct_semana" es null (automático) o [mín, máx] en % de peso por semana; "modo_comidas" es "fijas" (lista de "comidas", cada una con "objetivo" en gramos, "porciones" o nada) o "libres" (sin lista; se añaden cada día); nunca repartas el total del día entre comidas si no te lo pido; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
+Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "ritmo_pct_semana" es null (automático) o [mín, máx] en % de peso por semana; "mesociclo" es opcional ("inicio" un lunes, "semanas" de carga, un RIR por semana, "descarga" añade una semana final con la mitad de series; null lo quita); "modo_comidas" es "fijas" (lista de "comidas", cada una con "objetivo" en gramos, "porciones" o nada) o "libres" (sin lista; se añaden cada día); nunca repartas el total del día entre comidas si no te lo pido; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
 
 async function copyText(text, okMsg) {
   try { await navigator.clipboard.writeText(text); toast(okMsg); }

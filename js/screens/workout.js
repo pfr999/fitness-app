@@ -5,15 +5,20 @@ import { $, $$, esc, fmt, num, int, toast, openSheet, closeSheet, bindSeg, icon,
 import { addDays, fmtShort, range } from '../dates.js';
 import { FILES, planFor, newPlanVersion } from '../model.js';
 import { startRest, stopRest } from '../ui/rest.js';
+import { mesoWeek, deloadSets, deloadKg } from '../engine/meso.js';
 import { resolveExercise, progressionHint } from '../engine/training.js';
 import { exercisesOf, datalist, assignSheet } from './exercises.js';
 
 const keyOf = (ref, exs) => resolveExercise(ref, exs)?.id || `n:${String(ref.name).toLowerCase().trim()}`;
 
-/** Series de un ejercicio en la última sesión anterior a `date` (hasta 90 días atrás). */
-function lastSets(ctx, date, key, exs) {
+/**
+ * Series de un ejercicio en la última sesión anterior a `date` (hasta 90 días atrás). Las semanas de
+ * descarga del mesociclo no cuentan como referencia (son más ligeras a propósito).
+ */
+function lastSets(ctx, date, key, exs, meso = null) {
   const days = ctx.store.allDays();
   for (const d of range(addDays(date, -90), addDays(date, -1)).reverse()) {
+    if (meso && mesoWeek(meso, d)?.deload) continue;
     const sets = (days[d]?.session?.sets || []).filter((s) => !s.warmup && keyOf(s, exs) === key);
     if (sets.length) return { date: d, sets: sets.sort((a, b) => (a.i ?? 0) - (b.i ?? 0)) };
   }
@@ -72,15 +77,19 @@ export function render(ctx) {
   const prefs = prefsOf(ctx);
   const swap = day.session?.swap || {};
   const isToday = date === ctx.today();
+  const meso = v?.routine?.meso || null;
+  const mw = mesoWeek(meso, date);
+  const inMeso = mw && !mw.done && !mw.before;
 
-  // ejercicios de la rutina (con los cambios de hoy) + extras registrados o añadidos hoy
+  // ejercicios de la rutina (con los cambios de hoy y la semana del mesociclo) + extras
   const groups = rd.items.map((it) => {
     const to = swap[it.name];
-    const it2 = to ? { ...it, name: to, ex: undefined, swappedFrom: it.name } : it;
+    let it2 = to ? { ...it, name: to, ex: undefined, swappedFrom: it.name } : it;
+    if (inMeso) it2 = mw.deload ? { ...it2, sets: deloadSets(it2.sets), rpe: 6 } : { ...it2, rpe: mw.rpe };
     return { it: it2, key: keyOf(it2, exs), extra: false };
   });
   const extras = new Map();
-  for (const s of logged) { const k = keyOf(s, exs); if (!groups.some((g) => g.key === k) && !extras.has(k)) extras.set(k, { it: { name: s.name, ex: s.ex, sets: 1 }, key: k, extra: true }); }
+  for (const s of logged) { const k = keyOf(s, exs); if (!groups.some((g) => g.key === k) && !extras.has(k)) extras.set(k, { it: { name: s.name, ex: s.ex, sets: Math.max(1, logged.filter((x) => !x.warmup && keyOf(x, exs) === k).length) }, key: k, extra: true }); }
   for (const name of ctx.state.extraEx?.[date] || []) { const k = keyOf({ name }, exs); if (!groups.some((g) => g.key === k) && !extras.has(k)) extras.set(k, { it: { name, sets: 3 }, key: k, extra: true }); }
   const all = [...groups, ...extras.values()];
   const workOf = (g) => logged.filter((s) => keyOf(s, exs) === g.key && !s.warmup).length;
@@ -88,13 +97,13 @@ export function render(ctx) {
 
   const block = (g, idx) => {
     const mine = logged.filter((s) => keyOf(s, exs) === g.key).sort((a, b) => (a.i ?? 0) - (b.i ?? 0));
-    const prev = lastSets(ctx, date, g.key, exs);
+    const prev = lastSets(ctx, date, g.key, exs, meso);
     const planned = g.it.sets || 1;
     const n = Math.max(planned, mine.length ? Math.max(...mine.map((s) => (s.i ?? 0) + 1)) : 0, ctx.state.extraSets?.[`${date}|${g.key}`] || 0);
     const doneN = workOf(g);
     const done = doneN >= planned;
     const isOpen = open[`${date}|${g.key}`] ?? g === firstPending;
-    const hint = prev && progressionHint(prev.sets, g.it);
+    const hint = !(inMeso && mw.deload) && prev && progressionHint(prev.sets, g.it);
     const known = !!resolveExercise(g.it, exs);
     const pref = prefs[g.key] || {};
     let wn = 0;
@@ -104,7 +113,7 @@ export function render(ctx) {
       const w = !!s?.warmup;
       const label = w ? 'W' : ++wn;
       const p = prev?.sets.find((x) => (x.i ?? 0) === k) || prev?.sets[prev.sets.length - 1];
-      const sug = hint ? { kg: hint.kg, reps: g.it.reps?.[0] ?? p?.reps } : null;
+      const sug = hint ? { kg: hint.kg, reps: g.it.reps?.[0] ?? p?.reps } : inMeso && mw.deload && p ? { kg: deloadKg(p.kg), reps: p.reps } : null;
       const ph = sug || p;
       return `<div class="set-row v2 ${s ? 'done' : ''} ${k === nowK ? 'now' : ''} ${w ? 'w' : ''}" data-set="${esc(g.key)}|${k}" data-w="${w ? 1 : 0}" data-rpe="${s?.rpe ?? ''}">
         <button type="button" class="sn" data-wt aria-label="Serie ${k + 1}: tocar para marcarla de calentamiento">${label}</button>
@@ -140,6 +149,7 @@ export function render(ctx) {
   return `${days.length ? `<div class="daytabs" id="trainDays">${days.map((d) => `<button data-v="${esc(d.name)}" class="${d.name === rd.name ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>` : ''}
     <div class="card">
       <div class="ch"><h2>${esc(rd.name)}</h2><span class="aux" id="sessCount">${nWork} de ${nPlan} series</span></div>
+      ${inMeso ? `<div class="meso-chip ${mw.deload ? 'dl' : ''}"><span>${mw.deload ? `<b>Semana de descarga</b> (${mw.week} de ${mw.total}): la mitad de series y ~10 % menos de peso (en verde), lejos del fallo (RPE 6).` : `<b>Mesociclo · semana ${mw.week} de ${mw.total}</b>: deja ${mw.rir} ${mw.rir === 1 ? 'repetición' : 'repeticiones'} en reserva (RIR ${mw.rir} ≈ RPE ${mw.rpe}).`}</span></div>` : mw?.done ? '<div class="meso-chip a"><span>El mesociclo ha terminado. Empieza otro en Plan → Rutina.</span></div>' : ''}
       ${isToday ? '<div class="rest-pick"><span>⏱ Descanso</span>' + [60, 90, 120, 180].map((x) => `<button type="button" data-rest="${x}">${x < 120 ? `${x} s` : `${x / 60} min`}</button>`).join('') + '</div>' : ''}
       <div class="muted small" style="margin:-4px 0 10px">«Antes» es tu última sesión (tócalo para copiarlo). <b>✓</b> apunta lo que ves; si hiciste otra cosa, escríbelo. Toca el número para marcar una serie de calentamiento (W).</div>
       ${all.map(block).join('')}

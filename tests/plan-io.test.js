@@ -59,3 +59,16 @@ test('comidas: modo fijo con objetivo por comida y modo libre', () => {
   assert.equal(w.diet.meals_mode, 'free');
   assert.deepEqual(w.diet.meals, [], 'en modo libre no hay lista fija');
 });
+
+test('mesociclo: ida y vuelta, se conserva si no viene y null lo quita', () => {
+  const v = base();
+  v.routine.meso = { start: '2026-09-28', weeks: 4, rir: [3, 2, 2, 1], deload: true };
+  const w = structuredClone(emptyPlan().versions[0]);
+  parsePlan(JSON.parse(JSON.stringify(exportPlan(v)))).apply(w);
+  assert.deepEqual(w.routine.meso, v.routine.meso);
+  parsePlan({ rutina: { dias: [] } }).apply(w);
+  assert.equal(w.routine.meso.weeks, 4, 'sin «mesociclo» se conserva');
+  parsePlan({ rutina: { dias: [], mesociclo: null } }).apply(w);
+  assert.equal(w.routine.meso, undefined);
+  assert.throws(() => parsePlan({ rutina: { dias: [], mesociclo: { inicio: 'ayer', semanas: 4 } } }), /fecha/);
+});
