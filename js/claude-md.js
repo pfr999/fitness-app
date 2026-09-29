@@ -2,7 +2,7 @@
 // datos como CLAUDE.md. Así, al trabajar sobre el repo, Claude sabe qué es cada fichero y cómo cambiarlo
 // sin romper nada. Cambia DATA_DOC_VERSION cuando cambie el modelo de datos.
 
-export const DATA_DOC_VERSION = 9;
+export const DATA_DOC_VERSION = 10;
 
 export const CLAUDE_MD = `# Recomp · repo de datos
 
@@ -49,7 +49,7 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
             "meals": [ { "slot": "Comida 1", "target": { "p": 50, "c": 80, "f": 20 } }, { "slot": "Intra-entreno", "portions": { "C": 1 } }, { "slot": "Comida 3" } ],
             "rules": [ "…" ] },
   "routine": { "meso": { "start": "2026-10-05", "weeks": 4, "rir": [3, 2, 2, 1], "deload": true },
-    "days": [ { "name": "Día 1 · Pierna", "items": [
+    "days": [ { "name": "Día 1 · Pierna", "warmup": "3 min de respiración · movilidad de cadera", "items": [
       { "name": "Sentadilla trasera", "ex": "sentadilla", "sets": 4, "reps": [6, 8], "rpe": 8, "note": "…" } ] } ] },
   "supplements": [ { "name": "Creatina", "dose": "5 g", "timing": "Con una comida", "kind": "supplement" } ] }
 \`\`\`
@@ -59,6 +59,8 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 - \`rate_pct_week\`: \`null\` = automático según el objetivo (pérdida: según % graso; mantenimiento: ±0,15 %/sem;
   volumen: +0,15–0,35 %/sem); o \`[mín, máx]\` en % de peso por semana: en pérdida y volumen en positivo, en la
   dirección del objetivo; en mantenimiento con signo (p. ej. \`[-0.2, 0.2]\`).
+- \`routine.days[].warmup\` (opcional): calentamiento del día en texto libre (movilidad, respiración…); sale en
+  Entreno como «Antes de empezar». No es un ejercicio ni cuenta volumen: no lo metas en \`items\`.
 - Kcal y macros de \`diet\` son opcionales (\`null\` = sin objetivo; si solo hay \`kcal.train\`, vale para todos los días).
 - \`routine.meso\` (opcional): mesociclo que empieza en \`start\` (lunes) con \`weeks\` semanas de carga, un RIR objetivo por
   semana (\`rir\`, RIR 2 ≈ RPE 8) y, si \`deload\`, una semana final de descarga (mitad de series, ~10 % menos de peso).

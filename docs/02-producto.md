@@ -127,3 +127,5 @@ Ver `docs/05-investigacion-apps.md` para el porqué.
   Comidas enseña lo que llevas y el gasto usa solo los días registrados.
 - **v1.6.1:** Entreno: un día marcado como descanso enseña solo «Día de descanso» (sin pestañas ni
   ejercicios) con «Quitar descanso» para volver a la rutina si fue un error.
+- **v1.6.2:** calentamiento por día de rutina (movilidad, respiración…): texto libre que se edita en Plan →
+  Rutina y sale en Entreno como «Antes de empezar». No es un ejercicio ni cuenta volumen.

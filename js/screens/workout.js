@@ -150,7 +150,12 @@ export function render(ctx) {
   const nWork = logged.filter((s) => !s.warmup).length;
   const nPlan = all.reduce((a, g) => a + (g.it.sets || 1), 0);
   ctx.state._workGroups = all;
+  // calentamiento del día (texto libre del plan): no es un ejercicio ni cuenta volumen; abierto hasta la primera serie
+  const warm = String(rd.warmup || '').trim();
+  const warmCard = warm ? `<details class="card warmup" ${logged.length ? '' : 'open'}><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font-size:16px">Antes de empezar</h2><span class="aux" style="display:flex;align-items:center;gap:4px">calentamiento <span style="width:16px;height:16px;display:inline-flex">${icon.down}</span></span></summary>
+      <div class="small" style="margin-top:10px;white-space:pre-line;color:var(--ink-2);font-weight:600">${esc(warm)}</div></details>` : '';
   return `${days.length ? `<div class="daytabs" id="trainDays">${days.map((d) => `<button data-v="${esc(d.name)}" class="${d.name === rd.name ? 'on' : ''}">${esc(d.name)}</button>`).join('')}</div>` : ''}
+    ${warmCard}
     <div class="card">
       <div class="ch"><h2>${esc(rd.name)}</h2><span class="aux" id="sessCount">${nWork} de ${nPlan} series</span></div>
       ${inMeso ? `<div class="meso-chip ${mw.deload ? 'dl' : ''}"><span>${mw.deload ? `<b>Semana de descarga</b> (${mw.week} de ${mw.total}): la mitad de series y ~10 % menos de peso (en verde), lejos del fallo (RPE 6).` : `<b>Mesociclo · semana ${mw.week} de ${mw.total}</b>: deja ${mw.rir} ${mw.rir === 1 ? 'repetición' : 'repeticiones'} en reserva (RIR ${mw.rir} ≈ RPE ${mw.rpe}).`}</span></div>` : mw?.done ? '<div class="meso-chip a"><span>El mesociclo ha terminado. Empieza otro en Plan → Rutina.</span></div>' : ''}
