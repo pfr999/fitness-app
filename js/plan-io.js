@@ -39,6 +39,7 @@ export function exportPlan(v) {
       ...(v.routine.meso ? { mesociclo: { inicio: v.routine.meso.start, semanas: v.routine.meso.weeks, rir: v.routine.meso.rir, descarga: !!v.routine.meso.deload } } : {}),
       dias: (v.routine.days || []).map((d) => ({
         nombre: d.name,
+        ...(d.warmup ? { calentamiento: d.warmup } : {}),
         ejercicios: d.items.map((it) => ({ nombre: it.name, series: it.sets, reps: it.reps, rpe: it.rpe ?? null, ...(it.note ? { nota: it.note } : {}) })),
       })),
     },
@@ -130,6 +131,7 @@ export function parsePlan(obj) {
       need(Array.isArray(day?.ejercicios), `rutina.dias[${i}].ejercicios debe ser una lista`);
       return {
         name: String(day?.nombre || `Día ${i + 1}`),
+        ...(day?.calentamiento ? { warmup: String(day.calentamiento) } : {}),
         items: (day?.ejercicios || []).map((e, j) => {
           const reps = Array.isArray(e?.reps) ? e.reps.map(Number) : [Number(e?.reps), Number(e?.reps)];
           need(e?.nombre, `rutina.dias[${i}].ejercicios[${j}] sin nombre`);

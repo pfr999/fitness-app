@@ -72,3 +72,14 @@ test('mesociclo: ida y vuelta, se conserva si no viene y null lo quita', () => {
   assert.equal(w.routine.meso, undefined);
   assert.throws(() => parsePlan({ rutina: { dias: [], mesociclo: { inicio: 'ayer', semanas: 4 } } }), /fecha/);
 });
+
+test('calentamiento por día: ida y vuelta y ausente si no hay', () => {
+  const v = base();
+  v.routine.days[0].warmup = '3 min de respiración\nmovilidad de hombros';
+  const out = exportPlan(v);
+  assert.equal(out.rutina.dias[0].calentamiento, v.routine.days[0].warmup);
+  const w = structuredClone(emptyPlan().versions[0]);
+  parsePlan(JSON.parse(JSON.stringify(out))).apply(w);
+  assert.equal(w.routine.days[0].warmup, v.routine.days[0].warmup);
+  assert.equal('calentamiento' in exportPlan(base()).rutina.dias[0], false);
+});

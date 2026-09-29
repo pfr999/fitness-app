@@ -90,6 +90,7 @@ function renderRoutine(ctx, v) {
   const vol = plannedVolume(v.routine, exs, v.targets?.sessions);
   return `${mesoCard(ctx, v)}<div class="daytabs" id="dayTabs">${days.map((x, k) => `<button data-v="${k}" class="${k === i ? 'on' : ''}">${esc(x.name)}</button>`).join('')}<button data-v="new" aria-label="Añadir día">${icon.plus}</button></div>
     <div class="card"><div class="ch"><h2>${esc(d.name)}</h2><span class="aux">${d.items.reduce((a, x) => a + (x.sets || 0), 0)} series</span></div>
+      ${d.warmup ? `<div class="tip" style="margin:-4px 0 10px"><span><b>Calentamiento:</b> <span style="white-space:pre-line">${esc(d.warmup)}</span></span></div>` : ''}
       ${d.items.map((x, k) => { const ex = resolveExercise(x, exs); return `<div class="pe"><span class="ex-n">${k + 1}</span><div class="ex-t"><b>${esc(x.name)}</b><span>${esc(x.sets)} × ${esc((x.reps || []).join('–'))}${x.rpe ? ` · RPE ${esc(x.rpe)}` : ''}</span>
         ${ex ? `<div class="muted small" style="font-weight:600">${esc(musclesLine(ex))}</div>` : `<div><button class="link" data-assign="${esc(x.name)}" style="color:var(--amber);padding:2px 0">Sin músculos asignados · Asignar</button></div>`}
         ${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}</div></div>`; }).join('') || '<div class="muted">Sin ejercicios.</div>'}
@@ -452,6 +453,8 @@ function daySheet(ctx, idx) {
   openSheet(`<h3>${isNew ? 'Nuevo día' : `Editar ${esc(day.name)}`}</h3>
     <div class="stack" style="margin-top:12px">
       <div class="field"><label for="dayName">Nombre del día</label><input class="inp" id="dayName" value="${esc(day.name)}"></div>
+      <div class="field"><label for="dayWarm">Calentamiento (opcional)</label><textarea class="inp" id="dayWarm" style="min-height:64px" placeholder="p. ej. 3 min de respiración · movilidad de hombros y cadera · 1 serie ligera del primer ejercicio">${esc(day.warmup || '')}</textarea>
+        <div class="hint">Sale arriba en Entreno como «Antes de empezar». No cuenta como ejercicio.</div></div>
       ${datalist(ctx)}
       <div id="items">${day.items.map(itemRow).join('')}</div>
       <div class="hint" style="margin-top:-4px">Al escribir te sugiere ejercicios del catálogo, que ya saben qué músculos trabajan. Si escribes uno que no está, marca sus músculos debajo.</div>
@@ -525,7 +528,8 @@ function daySheet(ctx, idx) {
           }, `Ejercicios propios: ${customs.map((c) => c.name).join(', ')}`);
         }
         const clean = items.map(({ _custom, _muscles, ...x }) => x);
-        const next = { name: $('#dayName', sh).value.trim() || day.name, items: clean };
+        const warmup = $('#dayWarm', sh).value.trim();
+        const next = { name: $('#dayName', sh).value.trim() || day.name, ...(warmup ? { warmup } : {}), items: clean };
         const ok = savePlan(ctx, (p) => { if (isNew) p.routine.days.push(next); else p.routine.days[idx] = next; }, $('#why', sh).value);
         if (ok) { if (isNew) ctx.state.planDay = v.routine.days.length; closeSheet(); ctx.render(); }
       });
@@ -690,13 +694,13 @@ export const CLAUDE_PROMPT = `Cuando cerremos un plan, dámelo en «formato Reco
     "reglas": [ "Comida libre opcional el domingo en la cena (máx. 1.200 kcal)" ]
   },
   "rutina": { "mesociclo": { "inicio": "2026-10-05", "semanas": 4, "rir": [3, 2, 2, 1], "descarga": true },
-    "dias": [ { "nombre": "Día 1 · Pierna", "ejercicios": [
+    "dias": [ { "nombre": "Día 1 · Pierna", "calentamiento": "3 min de respiración · movilidad de cadera", "ejercicios": [
     { "nombre": "Sentadilla trasera", "series": 4, "reps": [6, 8], "rpe": 8, "nota": "barra alta" }
   ] } ] },
   "suplementos": [ { "nombre": "Creatina", "dosis": "5 g", "momento": "Con una comida", "tipo": "suplemento" } ]
 }
 
-Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "objetivo" es "perdida", "mantenimiento", "volumen" o "sin_objetivo" (solo registro: sin franjas ni avisos); "ritmo_pct_semana" es null (automático según el objetivo) o [mín, máx] en % de peso por semana (en pérdida y volumen, en positivo en la dirección del objetivo; en mantenimiento, con signo, p. ej. [-0.2, 0.2]); kcal y macros de la dieta pueden ser null (sin objetivo); "mesociclo" es opcional ("inicio" un lunes, "semanas" de carga, un RIR por semana, "descarga" añade una semana final con la mitad de series; null lo quita); "modo_comidas" es "fijas" (lista de "comidas", cada una con "objetivo" en gramos, "porciones" o nada) o "libres" (sin lista; se añaden cada día); nunca repartas el total del día entre comidas si no te lo pido; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
+Reglas: kcal y gramos por día; "reps" es [mín, máx]; "rpe" 1–10; "tipo" es "suplemento" o "medicacion"; "objetivo" es "perdida", "mantenimiento", "volumen" o "sin_objetivo" (solo registro: sin franjas ni avisos); "ritmo_pct_semana" es null (automático según el objetivo) o [mín, máx] en % de peso por semana (en pérdida y volumen, en positivo en la dirección del objetivo; en mantenimiento, con signo, p. ej. [-0.2, 0.2]); kcal y macros de la dieta pueden ser null (sin objetivo); "calentamiento" de cada día es opcional (texto libre; no es un ejercicio ni cuenta volumen); "mesociclo" es opcional ("inicio" un lunes, "semanas" de carga, un RIR por semana, "descarga" añade una semana final con la mitad de series; null lo quita); "modo_comidas" es "fijas" (lista de "comidas", cada una con "objetivo" en gramos, "porciones" o nada) o "libres" (sin lista; se añaden cada día); nunca repartas el total del día entre comidas si no te lo pido; porciones con claves P, C, G, F (fruta), L (lácteo). Si un ejercicio no es habitual, añade "musculos" con 1 (directo) o 0.5 (indirecto) usando: ${MUSCLE_KEYS}.`;
 
 async function copyText(text, okMsg) {
   try { await navigator.clipboard.writeText(text); toast(okMsg); }
