@@ -58,7 +58,8 @@ recomp-data/
 
 ## exercises.json (ejercicios propios)
 ```jsonc
-{ "items": [ { "id": "mine:k3x9", "name": "Remo invertido", "muscles": { "espalda": 1, "biceps": 0.5 } } ] }
+{ "items": [ { "id": "mine:k3x9", "name": "Remo invertido", "muscles": { "espalda": 1, "biceps": 0.5 } } ],
+  "prefs": { "press_banca": { "rest": 150, "note": "Banco en la muesca 3" } } }   // descanso (s) y nota fija por ejercicio
 ```
 El catálogo base (~100 ejercicios con alias y músculos: 1 = directo, 0,5 = indirecto) está en el
 código (`js/training/catalog.js`); aquí solo van los que crea el usuario. Un ejercicio de la rutina o
@@ -80,7 +81,9 @@ de una serie se reconoce por `ex` (id) o, si no lo tiene, por su nombre o alias.
     "diet": { "status": "logged|plan|over|under|unknown", "kcal_delta": 700 },  // validación del día (Hoy o revisión semanal)
     "supplements_taken": ["Creatina", "Vitamina D3"],
     "session": { "day": "Día 3", "sets": [
-        { "ex": "peso_muerto_rumano", "name": "Peso muerto rumano", "i": 0, "kg": 100, "reps": 8, "rpe": 9 } ] },  // i = nº de serie
+        { "ex": "peso_muerto_rumano", "name": "Peso muerto rumano", "i": 0, "kg": 100, "reps": 8, "rpe": 9 },  // i = nº de serie
+        { "name": "Sentadilla", "i": 0, "kg": 60, "reps": 8, "warmup": true } ],   // calentamiento: no cuenta en volumen ni récords
+      "swap": { "Prensa": "Sentadilla hack" } },         // cambio de ejercicio solo ese día
     "checkin": {                                        // solo el día de control
       "measures": { "waist": 93.8 }, "skinfolds": { "sf_supraspinale": 10.4 },
       "photos": ["front", "side_r", "side_l", "back"],

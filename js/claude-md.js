@@ -31,7 +31,7 @@ siempre respetando estas reglas.
 |---|---|
 | \`config.json\` | perfil (\`profile\`), medidas del control (\`metrics\`), fórmulas, alertas, \`meal_slots\`, \`checkin_weekday\` (0 = domingo) |
 | \`plan.json\` | \`{ "versions": [ … ] }\` versiones completas del plan |
-| \`exercises.json\` | ejercicios propios \`{ "items": [ { "id": "mine:…", "name", "muscles": { "espalda": 1, "biceps": 0.5 } } ] }\` |
+| \`exercises.json\` | ejercicios propios \`{ "items": [ { "id": "mine:…", "name", "muscles": { "espalda": 1, "biceps": 0.5 } } ] }\` y preferencias por ejercicio \`"prefs": { "<id o n:nombre>": { "rest": 150, "note": "Banco en la 3" } }\` |
 | \`foods.json\` | alimentos propios (\`custom\`), frecuencia de uso, «Mis alimentos» (\`favorites\`: alimento + cantidad) y comidas guardadas (\`saved_meals\`) |
 | \`days/AAAA-MM.json\` | un objeto por fecha con lo registrado ese día (ver abajo) |
 | \`fotos/AAAA-MM-DD/*.jpg\` | fotos del control (frente, perfiles, espalda) |
@@ -68,7 +68,8 @@ Copia la versión vigente (la de \`from\` más reciente ≤ hoy), aplica el camb
 
 ## days/AAAA-MM.json: qué hay en cada día
 \`weight\`, \`steps\`, \`sleep_h\`, \`rhr\`, \`note\`, \`trained\` (true entreno / false descanso),
-\`session\` \`{ "day": "Día 2", "sets": [ { "name", "ex", "i", "kg", "reps", "rpe" } ] }\`,
+\`session\` \`{ "day": "Día 2", "sets": [ { "name", "ex", "i", "kg", "reps", "rpe", "warmup" } ], "swap": { "<ejercicio de la rutina>": "<el que se hizo hoy>" } }\`
+(\`warmup: true\` = serie de calentamiento: no cuenta en volumen ni récords),
 \`meals\` \`[ { "slot", "items": [ { "name", "brand", "g", "per100": { "kcal", "p", "c", "f" } } ] } ]\`,
 \`diet\` \`{ "status": "logged|plan|over|under|unknown", "kcal_delta" }\` (validación del día),
 \`supplements_taken\`, \`hidden_meals\` (comidas fijas del plan ocultas ese día), \`meal_order\` (orden de las comidas
