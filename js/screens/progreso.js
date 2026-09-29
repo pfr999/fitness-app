@@ -243,5 +243,6 @@ ruido diario σ ≈ 0,6 kg · días sin pesar = solo predicción</code><div clas
     <div class="fx"><b>Composición · Faulkner y Navy</b><code>%G Faulkner = 0,153 · (tríceps + subesc. + supraesp. + abdominal) + 5,783
 %G Navy = 495 / (1,0324 − 0,19077·log(cint − cuello) + 0,15456·log(alt)) − 450</code><div class="muted small">Rango, no número exacto. Un cambio es real si supera el mínimo detectable (cintura ${fmt(MDC.waist)} cm, pliegues ${fmt(MDC.sumSkinfolds, 0)} mm).</div></div>
     <div class="fx"><b>Objetivo de ritmo</b><code>% graso &gt; 20 → 0,7–1,0 %/sem
-13–20 → 0,4–0,7 · &lt; 13 → 0,25–0,5</code><div class="muted small">Cuanto más delgado, más lento para conservar músculo. Editable en Plan → Objetivos.</div></div>`);
+13–20 → 0,4–0,7 · &lt; 13 → 0,25–0,5
+Mujeres: &gt; 29 · 22–29 · &lt; 22</code><div class="muted small">Cuanto más delgado, más lento para conservar músculo. En mujeres los cortes son 9 puntos más altos (más grasa esencial). Editable en Plan → Objetivos.</div></div>`);
 }

@@ -1,10 +1,14 @@
 // Objetivos por defecto y autorregulación. Ver docs/04-motor-calculo.md §4 y §6.
 
-/** Ritmo de pérdida recomendado (% peso/semana) según % graso. */
-export function rateTargetForBodyFat(bfPct) {
+/**
+ * Ritmo de pérdida recomendado (% peso/semana) según % graso y sexo. En mujeres los cortes suben
+ * 9 puntos (más grasa esencial: ~12 % frente a ~3 %): > 29 · 22–29 · < 22.
+ */
+export function rateTargetForBodyFat(bfPct, sex = 'M') {
   if (bfPct == null) return [0.4, 0.7];
-  if (bfPct > 20) return [0.7, 1.0];
-  if (bfPct >= 13) return [0.4, 0.7];
+  const k = sex === 'F' ? 9 : 0;
+  if (bfPct > 20 + k) return [0.7, 1.0];
+  if (bfPct >= 13 + k) return [0.4, 0.7];
   return [0.25, 0.5];
 }
 

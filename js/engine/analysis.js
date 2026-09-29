@@ -46,7 +46,7 @@ export function analyze({ config, plan, days }, { today }) {
   // ---- ritmo y objetivos ----
   const rate = weeklyRate(curTrend);
   const version = planFor(plan, today);
-  const rateTarget = version?.targets?.rate_pct_week || rateTargetForBodyFat(body.bfMid);
+  const rateTarget = version?.targets?.rate_pct_week || rateTargetForBodyFat(body.bfMid, profile.sex);
   const dataDays = daysBetween(firstWeight, today) + 1;
 
   // ---- previsión con el plan actual ----

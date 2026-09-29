@@ -93,7 +93,7 @@ t_objetivo = −τ · ln(1 − ε·(W_obj − W₀)/ΔI)     (argumento ≤ 0 �
 
 | Parámetro | Valor por defecto | Fuente |
 |---|---|---|
-| Ritmo de pérdida (auto según % graso) | > 20 %: **0,7–1,0** · 13–20 %: **0,4–0,7** · < 13 %: **0,25–0,5** % peso/sem | Helms 2014, Garthe 2011 [MA/RCT]; la prioridad de conservar músculo baja el ritmo cuanto más delgado |
+| Ritmo de pérdida (auto según % graso y sexo) | Hombres > 20 %: **0,7–1,0** · 13–20 %: **0,4–0,7** · < 13 %: **0,25–0,5** % peso/sem. Mujeres: mismos ritmos con cortes 9 puntos más altos (> 29 · 22–29 · < 22) por la mayor grasa esencial (~12 % vs ~3 %) | Helms 2014, Garthe 2011 [MA/RCT]; la prioridad de conservar músculo baja el ritmo cuanto más delgado |
 | Recomposición | mantenimiento a −0,25 %/sem | Helms, Iraki 2019 [Exp] |
 | Alerta ritmo alto | > 1 %/sem sostenido 2 semanas | Garthe 2011 |
 | Proteína en déficit | **2,3–3,1 g/kg masa magra**; sin % graso: ~2,2 g/kg peso (mín. 1,6) | Helms 2014; Morton 2018; revisiones 2024–25 |

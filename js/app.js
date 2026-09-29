@@ -158,13 +158,20 @@ function render() {
   screen.bind?.(main, ctx);
 }
 
+/** El estado de guardado solo se enseña cuando hay algo que contar (sin conexión o error). */
+let lastSync = 'idle';
 function paintSync(status, err) {
   const el = $('#sync');
-  const label = { idle: 'Guardado', pending: 'Pendiente', saving: 'Guardando…', error: 'Error', offline: 'Sin conexión' }[status] || '';
-  el.hidden = false;
-  el.className = `sync ${status}`;
-  el.querySelector('span').textContent = label;
-  el.title = err ? String(err.message || err) : '';
+  const show = status === 'offline' || status === 'error';
+  el.hidden = !show;
+  if (show) {
+    el.className = `sync ${status}`;
+    el.querySelector('span').textContent = status === 'offline' ? 'Sin conexión' : 'Error al guardar';
+    el.title = err ? String(err.message || err) : '';
+  }
+  if (status === 'offline' && lastSync !== 'offline') toast('Sin conexión: lo que apuntes se guarda en el móvil y se sube solo');
+  if ((lastSync === 'offline' || lastSync === 'error') && status === 'idle') toast('Conexión recuperada: todo subido');
+  lastSync = status;
 }
 
 // ---------- tema ----------

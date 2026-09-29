@@ -124,6 +124,9 @@ test('objetivo de ritmo según % graso', () => {
   assert.deepEqual(rateTargetForBodyFat(15), [0.4, 0.7]);
   assert.deepEqual(rateTargetForBodyFat(11), [0.25, 0.5]);
   assert.deepEqual(rateTargetForBodyFat(null), [0.4, 0.7]);
+  assert.deepEqual(rateTargetForBodyFat(25, 'F'), [0.4, 0.7], 'mujer: cortes 9 puntos más altos');
+  assert.deepEqual(rateTargetForBodyFat(31, 'F'), [0.7, 1.0]);
+  assert.deepEqual(rateTargetForBodyFat(20, 'F'), [0.25, 0.5]);
 });
 
 test('reglas RP', () => {
