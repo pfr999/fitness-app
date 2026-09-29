@@ -189,9 +189,30 @@ function paintTheme() {
 }
 
 // ---------- actualizaciones (service worker) ----------
+/**
+ * Busca versión nueva. Devuelve 'new' (hay una lista para activar), 'none' o 'error'.
+ * Espera a que la nueva termine de descargarse para poder ofrecerla.
+ */
+export async function checkForUpdate() {
+  const reg = await navigator.serviceWorker?.getRegistration();
+  if (!reg) return 'error';
+  if (reg.waiting) return 'new';
+  try { await reg.update(); } catch { return 'error'; }
+  const w = reg.installing || reg.waiting;
+  if (!w) return 'none';
+  if (w.state === 'installed') return 'new';
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(reg.waiting ? 'new' : 'none'), 20000);
+    w.addEventListener('statechange', () => {
+      if (w.state === 'installed') { clearTimeout(t); resolve('new'); }
+      if (w.state === 'redundant') { clearTimeout(t); resolve('error'); }
+    });
+  });
+}
+
 function initServiceWorker() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
-  navigator.serviceWorker.register('sw.js').then((reg) => {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
     const offer = (w) => {
       if (document.querySelector('.banner-update')) return;
       const el = document.createElement('div');
@@ -208,7 +229,9 @@ function initServiceWorker() {
       const w = reg.installing;
       w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
     });
-    setInterval(() => reg.update(), 60 * 60 * 1000);
+    setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+    // al volver a la app (estaba en segundo plano) también se comprueba
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
   });
   let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });

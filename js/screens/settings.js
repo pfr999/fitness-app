@@ -5,6 +5,7 @@ import { FILES } from '../model.js';
 import { LocalBackend } from '../data/local.js';
 import { idb } from '../data/idb.js';
 import { today } from '../dates.js';
+import { checkForUpdate } from '../app.js';
 
 const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
@@ -35,11 +36,14 @@ export function openSettings(ctx, { saveSettings, setTheme, getTheme }) {
       bindSeg(sh, '#sTheme', (v) => setTheme(v));
       // versión: la del service worker activo (la que se está usando)
       caches.keys().then((ks) => { const k = ks.find((x) => /^recomp-v/.test(x)); $('#appVer', sh).textContent = k ? k.replace('recomp-', '') : 'sin caché'; }).catch(() => {});
-      $('#checkUpd', sh).addEventListener('click', async () => {
-        const reg = await navigator.serviceWorker?.getRegistration();
-        if (!reg) return toast('No disponible en este navegador');
-        await reg.update();
-        toast(reg.installing || reg.waiting ? 'Hay versión nueva: pulsa «Actualizar» arriba' : 'Ya tienes la última versión');
+      $('#checkUpd', sh).addEventListener('click', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true; b.textContent = 'Buscando…';
+        const r = await checkForUpdate();
+        b.disabled = false; b.textContent = 'Buscar actualización';
+        if (r === 'new') { closeSheet(); toast('Hay versión nueva: pulsa «Actualizar» arriba'); }
+        else if (r === 'none') toast('Ya tienes la última. Tras publicar, GitHub tarda hasta 10 min en servirla.');
+        else toast('No se pudo comprobar (¿sin conexión?)');
       });
       bindSeg(sh, '#sSex');
       $('#sSave', sh).addEventListener('click', () => {

@@ -1,6 +1,6 @@
 // Service worker: cachea la app para abrir al instante y sin conexión.
 // Al publicar una versión nueva, CAMBIA `VERSION`: la app mostrará «Nueva versión disponible».
-const VERSION = 'v0.9.3';
+const VERSION = 'v0.9.4';
 const CACHE = `recomp-${VERSION}`;
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'fonts/manrope-latin.woff2',
@@ -13,7 +13,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  // cache: 'reload' → siempre del servidor, nunca de la caché HTTP del navegador (evita mezclar versiones)
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))));
 });
 
 // La base de alimentos (varios MB) no se precarga: se guarda la primera vez que se usa y se
