@@ -2,7 +2,7 @@
 
 import { $, $$, esc, fmt, fmtK, num, int, toast, openSheet, bindSeg, icon, alertBox, signed, ask } from '../ui/ui.js';
 import { addDays, fmtShort, range, lastWeekday, nextWeekday, nearestWeekday, weekday, daysBetween, fmtDayShort } from '../dates.js';
-import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
+import { FILES, POSES, planFor, checkinPhotoPath, dietStatus } from '../model.js';
 import { analyze, weekSummary } from '../engine/analysis.js';
 import { MDC, isRealChange } from '../engine/body.js';
 import { processPhoto, hydratePhotos, forgetPhoto } from '../photos.js';
@@ -74,26 +74,42 @@ function newDraft(ctx, date) {
 
 // ---------------------------------------------------------------- render
 /** Abre el recorrido del control (nuevo o editando uno existente). */
-export function startControl(ctx, date, editing = false) {
-  ctx.state.ctl = { active: true, step: 1, draft: newDraft(ctx, date), editing };
-  ctx.nav({ tab: 'domingo', ctlStep: 1 });
+export function startControl(ctx, date, editing = false, quick = false) {
+  const first = quick ? QUICK[0] : 1;
+  ctx.state.ctl = { active: true, step: first, draft: newDraft(ctx, date), editing, quick };
+  ctx.nav({ tab: 'domingo', ctlStep: first });
+}
+/** Control rápido (semana sin incidencias): medidas, fotos y balance con la decisión. */
+const QUICK = [2, 3, 6];
+const seqOf = (st) => (st?.quick ? QUICK : [1, 2, 3, 4, 5, 6]);
+
+/** Semana sin incidencias: todos los días hasta hoy validados (y ninguno «no lo sé»). */
+function weekIsClean(ctx, weekEnd) {
+  const to = weekEnd < ctx.today() ? weekEnd : ctx.today();
+  for (let d = addDays(weekEnd, -6); d <= to; d = addDays(d, 1)) {
+    const ds = dietStatus(ctx.store.day(d));
+    if (!ds || ds.status === 'unknown') return false;
+  }
+  return true;
 }
 
 export function render(ctx) {
   const st = ctx.state.ctl;
   if (!st?.active) return renderLanding(ctx, { done: controlCard(ctx), history: historyList(ctx, thisWeekCheckin(ctx)) });
-  const n = Math.min(Math.max(st.step || 1, 1), STEPS.length);
-  st.step = n;
+  const seq = seqOf(st);
+  if (!seq.includes(st.step)) st.step = seq[0];
+  const n = st.step, pos = seq.indexOf(n), last = pos === seq.length - 1;
   const d = st.draft;
   const body = n === 1 ? stepDays(ctx, d) : n === 2 ? stepMeasures(ctx, d) : n === 3 ? stepPhotos(ctx, d) : n === 4 ? stepWeek(ctx, d) : n === 5 ? stepTraining(ctx, d) : stepSummary(ctx, d);
-  return `<div class="stepper">${STEPS.map((_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>
-    <div class="steplbl"><b>${STEPS[n - 1]}</b><span class="muted">${n} de ${STEPS.length}</span></div>
+  return `<div class="stepper">${seq.map((_, i) => `<i class="${i <= pos ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="steplbl"><b>${STEPS[n - 1]}</b><span class="muted">${st.quick ? 'Rápido · ' : ''}${pos + 1} de ${seq.length}</span></div>
     ${body}
     <div class="navbtns">
-      <button class="btn secondary" id="prev" style="width:auto;padding:0 18px;${n === 1 ? 'visibility:hidden' : ''}" aria-label="Paso anterior">${icon.back}</button>
-      <button class="btn primary" id="next">${n === STEPS.length ? 'Guardar control' : 'Siguiente'}</button>
+      <button class="btn secondary" id="prev" style="width:auto;padding:0 18px;${pos === 0 ? 'visibility:hidden' : ''}" aria-label="Paso anterior">${icon.back}</button>
+      <button class="btn primary" id="next">${last ? 'Guardar control' : 'Siguiente'}</button>
     </div>
-    ${n < STEPS.length ? `<button class="link" id="skip" style="width:100%;text-align:center;margin-top:6px">Saltar este paso</button>` : ''}
+    ${!last ? `<button class="link" id="skip" style="width:100%;text-align:center;margin-top:6px">Saltar este paso</button>` : ''}
+    ${st.quick ? '<button class="link" id="toFull" style="width:100%;text-align:center">Hacer el control completo (6 pasos)</button>' : ''}
     <button class="link" id="cancelEdit" style="width:100%;text-align:center">Salir del control sin guardar</button>
     ${st.draft.origDate ? `<button class="link" id="delCk" style="width:100%;text-align:center;color:var(--amber)">Borrar este control</button>` : ''}`;
 }
@@ -103,14 +119,16 @@ export function bind(root, ctx) {
   if (!st?.active) { bindLanding(root, ctx); return bindDone(root, ctx); }
   const d = st.draft;
   if (st.step === 1) bindDays(root, ctx, addDays(d.weekEnd, -6), d.weekEnd, () => { ctx._analysis = null; ctx.render(); });
-  const move = (k) => ctx.nav({ ctlStep: Math.max(1, Math.min(STEPS.length, st.step + k)) });
+  const seq = seqOf(st);
+  const move = (k) => ctx.nav({ ctlStep: seq[Math.max(0, Math.min(seq.length - 1, seq.indexOf(st.step) + k))] });
+  $('#toFull', root)?.addEventListener('click', () => { st.quick = false; ctx.nav({ ctlStep: 1 }); });
   $('#prev', root).addEventListener('click', () => move(-1));
   $('#skip', root)?.addEventListener('click', () => move(1));
   $('#cancelEdit', root)?.addEventListener('click', async () => {
     if (!(await ask({ title: '¿Salir del control?', text: 'Lo revisado de cada día ya está guardado; las medidas, valoraciones y la decisión de este control, no.', ok: 'Salir sin guardar', danger: true }))) return;
     ctx.state.ctl = null; ctx.render();
   });
-  $('#next', root).addEventListener('click', () => (st.step === STEPS.length ? save(ctx) : move(1)));
+  $('#next', root).addEventListener('click', () => (st.step === seq[seq.length - 1] ? save(ctx) : move(1)));
   bindHistory(root, ctx);
 
   // Campos numéricos → borrador
@@ -390,11 +408,16 @@ function controlCard(ctx) {
   const date = thisWeekCheckin(ctx);
   if (date) return renderDone(ctx, date);
   const due = isDue(ctx);
+  const clean = weekIsClean(ctx, currentControlWeek(ctx));
   return `<div class="card" style="${due ? 'border-color:var(--accent)' : ''}">
       <div class="ch"><h2>Control semanal</h2>${due ? '<span class="badge g">Toca</span>' : ''}</div>
       <div class="small" style="font-weight:700;margin:-6px 0 6px">Semana del ${esc(fmtShort(addDays(currentControlWeek(ctx), -6)))} al ${esc(fmtShort(currentControlWeek(ctx)))}</div>
       <div class="muted small" style="margin:-4px 0 12px">Revisa cada día, mídete, fotos, cómo ha ido, entreno y cierra con el balance y tu decisión. Tómate tu tiempo: de aquí salen las conclusiones.</div>
-      <button class="btn primary" id="startCk">Empezar el control semanal</button>
+      ${clean ? `<div class="alert g">${icon.check}<div><b>Semana sin incidencias</b>Todos los días están validados. Puedes hacer el control rápido: medidas, fotos y decisión.</div></div>
+      <button class="btn primary" id="startQuick">Control rápido · 3 pasos</button>
+      <button class="btn secondary" id="startCk" style="margin-top:8px">Control completo (6 pasos)</button>`
+    : `<button class="btn primary" id="startCk">Empezar el control semanal</button>
+      <button class="link" id="startQuick" style="width:100%;text-align:center;margin-top:6px">Control rápido (medidas, fotos y decisión)</button>`}
     </div>`;
 }
 
@@ -434,6 +457,7 @@ function labelOf(ctx, id) {
 
 function bindDone(root, ctx) {
   $('#startCk', root)?.addEventListener('click', () => startControl(ctx, ctx.today()));
+  $('#startQuick', root)?.addEventListener('click', () => startControl(ctx, ctx.today(), false, true));
   $('#edit', root)?.addEventListener('click', () => startControl(ctx, thisWeekCheckin(ctx), true));
   bindHistory(root, ctx);
   $('#copy', root)?.addEventListener('click', () => copySummary(ctx));

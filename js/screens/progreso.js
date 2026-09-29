@@ -2,8 +2,8 @@
 
 import { $, $$, esc, fmt, fmtK, signed, openSheet, bindSeg, icon, alertBox } from '../ui/ui.js';
 import { timeChart } from '../ui/charts.js';
-import { addDays, fmtShort } from '../dates.js';
-import { FILES, POSES, planFor, checkinPhotoPath } from '../model.js';
+import { addDays, fmtShort, weekStart } from '../dates.js';
+import { FILES, POSES, planFor, checkinPhotoPath, kcalTarget, dietStatus } from '../model.js';
 import { hallProjection } from '../engine/energy.js';
 import { rollingMean, whtrCategory, MDC } from '../engine/body.js';
 import { hydratePhotos } from '../photos.js';
@@ -51,6 +51,7 @@ export function render(ctx) {
       { kind: 'dots', points: pts.filter((p) => p.w != null).map((p) => ({ d: p.d, y: p.w })) },
       { kind: 'line', color: 'var(--accent)', points: pts.filter((p) => p.t).map((p) => ({ d: p.d, y: p.t.level })) },
       { kind: 'dash', color: 'var(--accent)', width: 2.2, points: proj },
+      ...(L.goal && Math.abs(L.goal - L.trend.level) <= 6 ? [{ kind: 'dash', color: 'var(--ink-3)', width: 1.2, points: [{ d: from, y: L.goal }, { d: proj.length ? addDays(today, horizon) : today, y: L.goal }] }] : []),
     ],
     events, bands, label: { d: today, y: L.trend.level, text: fmt(L.trend.level) },
   });
@@ -65,6 +66,46 @@ export function render(ctx) {
     { kind: 'line', color: 'var(--amber)', width: 2, points: intake7 },
     { kind: 'line', color: 'var(--blue)', points: tdeePts },
   ] }) : '';
+
+  // Gasto: número, confianza y por qué ha cambiado esta semana
+  let energyCard = '';
+  if (L.tdeeReliable) {
+    const T = a.tdee, n = T.length;
+    const now = T[n - 1], wk = T[Math.max(0, n - 8)];
+    const dE = now.E - wk.E;
+    const mean = (arr) => { const v = arr.map((x) => x.kcal).filter((x) => x != null); return v.length ? v.reduce((x, y) => x + y, 0) / v.length : null; };
+    const i7 = mean(a.intakes.slice(-7)), iPrev = mean(a.intakes.slice(-14, -7));
+    const rNow = a.trend[n - 1]?.slope * 7, rPrev = a.trend[Math.max(0, n - 8)]?.slope * 7;
+    const conf = now.sd < 100 ? 5 : now.sd < 150 ? 4 : now.sd < 200 ? 3 : now.sd < 300 ? 2 : 1;
+    const why = Math.abs(dE) < 30
+      ? `<b>Estable esta semana</b> (${signed(dE, 0)} kcal).`
+      : `<b>${dE > 0 ? 'Sube' : 'Baja'} ${fmtK(Math.abs(dE))} kcal esta semana.</b> ${i7 != null && iPrev != null ? `Comiste ${signed(i7 - iPrev, 0)} kcal/día respecto a la anterior (media ${fmtK(i7)})` : `Comiste de media ${fmtK(i7)} kcal/día`}${rNow != null && rPrev != null ? ` y la tendencia de peso pasó de ${signed(rPrev, 2)} a ${signed(rNow, 2)} kg/sem` : ''}.`;
+    energyCard = `<div class="card"><div class="ch"><h2>Gasto estimado</h2><span class="method">± ${fmtK(now.sd)} kcal</span></div>
+      <div class="big-num num">${fmtK(now.E)} <small>kcal/día</small></div>
+      <div class="conf" aria-label="Confianza ${conf} de 5">${[1, 2, 3, 4, 5].map((k) => `<i class="${k <= conf ? 'f' : ''}"></i>`).join('')}</div>
+      <div class="muted small" style="margin-top:4px">Confianza ${['', 'baja', 'baja', 'media', 'alta', 'alta'][conf]}${L.tdeeAssumedShare > 0.5 ? ' · muchos días sin validar: cuentan como el plan' : ''}</div>
+      <div class="why">${why} Que oscile ±50–150 kcal es normal.</div></div>`;
+  }
+
+  // Balance de 30 días: ¿cumplo el plan? y ¿el plan funciona?
+  let balance30 = '';
+  if (L.tdeeReliable) {
+    const from30 = addDays(today, -29);
+    const rows = a.intakes.map((x, i) => ({ ...x, E: a.tdee[i]?.ready ? a.tdee[i].E : null })).filter((x) => x.date >= from30 && x.kcal != null);
+    if (rows.length >= 10) {
+      const days = ctx.store.allDays();
+      const avg = (f) => rows.reduce((acc, x) => acc + f(x), 0) / rows.length;
+      const I = avg((x) => x.kcal);
+      const tgt = avg((x) => kcalTarget(planFor(plan, x.date), days[x.date]?.trained) || 0);
+      const E = avg((x) => x.E ?? L.tdee.E);
+      const vsPlan = I - tgt, bal = I - E;
+      const pred = (bal * 7) / (a.rho || 7700), real = L.rate.kgWeek;
+      balance30 = `<div class="card"><div class="ch"><h2>Balance de 30 días</h2><span class="aux">${rows.length} días</span></div>
+        <div class="b30"><div><span>¿Cumples el plan?</span><b class="num">${Math.abs(vsPlan) <= tgt * 0.05 ? 'Sí' : signed(vsPlan, 0) + ' kcal/día'}</b><small>comes ${fmtK(I)} · objetivo ${fmtK(tgt)}</small></div>
+        <div><span>¿Funciona el plan?</span><b class="num">${signed(bal, 0)} kcal/día</b><small>frente al gasto (${fmtK(E)}): predice ${signed(pred, 2)} kg/sem · tu tendencia ${signed(real, 2)}</small></div></div>
+        <div class="muted small" style="margin-top:8px">Lo primero mide la adherencia; lo segundo, si ese objetivo te lleva al ritmo que buscas.</div></div>`;
+    }
+  }
 
   // Cintura / pliegues
   const rows = a.body.rows.filter((r) => (st.comp === 'waist' ? r.waist != null : r.sum != null));
@@ -105,11 +146,32 @@ export function render(ctx) {
         <div class="cap">${fmtShort(d)}<span>${c.weight != null ? fmt(c.weight) + ' kg' : ''}${c.checkin.measures?.waist != null ? ` · ${fmt(c.checkin.measures.waist)} cm` : ''}</span></div></div>`;
     };
     const sel = (id, v) => `<select class="inp sm" id="${id}">${dates.map((d) => `<option value="${d}" ${d === v ? 'selected' : ''}>${fmtShort(d)}</option>`).join('')}</select>`;
-    photos = `<div class="card"><div class="ch"><h2>Fotos</h2></div>
+    const img = (d) => { const c = withPhotos.find((x) => x.date === d); return c.checkin.photos.includes(st.pose) ? `<img class="photo-img" data-photo="${checkinPhotoPath(d, c.checkin, st.pose)}" alt="" hidden>` : ''; };
+    const mode = st.phMode || 'side';
+    const view = mode === 'side' ? `<div class="cmp">${cell(A)}${cell(B)}</div>`
+      : `<div class="cmp2 ${mode}" id="cmp2" style="--x:${st.px ?? 50}%;--o:${(st.po ?? 50) / 100}"><div class="ph">${img(A)}</div><div class="ph b">${img(B)}</div>${mode === 'slide' ? '<div class="ln"></div>' : ''}<span class="tag l">${fmtShort(A)}</span><span class="tag r">${fmtShort(B)}</span></div>
+        ${mode === 'over' ? `<input type="range" id="phO" min="0" max="100" value="${st.po ?? 50}" style="width:100%;margin-top:10px;accent-color:var(--accent)" aria-label="Transparencia">` : '<div class="muted small" style="margin-top:6px;text-align:center">Arrastra la línea para comparar.</div>'}`;
+    photos = `<div class="card"><div class="ch"><h2>Fotos</h2><div class="seg sm" id="phMode" style="width:auto">${[['side', 'Lado a lado'], ['slide', 'Deslizar'], ['over', 'Superponer']].map(([k, l]) => `<button data-v="${k}" class="${mode === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       <div class="g2" style="margin-bottom:10px">${sel('phA', A)}${sel('phB', B)}</div>
       <div class="seg" id="poseSeg" style="margin-bottom:12px">${POSES.map((p) => `<button data-v="${p.id}" class="${p.id === st.pose ? 'on' : ''}">${p.label.replace('Perfil ', 'P. ')}</button>`).join('')}</div>
-      <div class="cmp">${cell(A)}${cell(B)}</div></div>`;
+      ${view}</div>`;
   }
+
+  // Constancia: 26 semanas, un cuadro por día (peso · día validado · entreno marcado)
+  const days0 = ctx.store.allDays();
+  const hStart = weekStart(addDays(today, -7 * 25));
+  let heat = '', validWeek = 0;
+  for (let d = hStart, k = 0; k < 26 * 7; d = addDays(d, 1), k++) {
+    const x = days0[d] || {};
+    const ds = dietStatus(x);
+    const lv = d > today ? -1 : (x.weight != null ? 1 : 0) + (ds && ds.status !== 'unknown' ? 1 : 0) + (x.trained != null ? 1 : 0);
+    if (d >= weekStart(today) && d <= today && ds && ds.status !== 'unknown') validWeek++;
+    heat += `<i class="${lv < 0 ? 'f' : lv ? `l${lv}` : ''}" title="${d}"></i>`;
+  }
+  const consistency = `<div class="card"><div class="ch"><h2>Constancia</h2><span class="aux">26 semanas</span></div>
+    <div class="heat">${heat}</div>
+    <div class="legend"><span><i class="dot" style="background:var(--sunken)"></i>Nada</span><span><i class="dot" style="background:var(--accent);opacity:.35"></i>Peso</span><span><i class="dot" style="background:var(--accent);opacity:.65"></i>+ día validado</span><span><i class="dot" style="background:var(--accent)"></i>+ entreno marcado</span></div>
+    <div class="muted small" style="margin-top:6px">Esta semana: ${validWeek} ${validWeek === 1 ? 'día validado' : 'días validados'}. Sin rachas que castiguen: cuenta la constancia, no la perfección.</div></div>`;
 
   // Entreno: volumen de los últimos 7 días y fuerza por ejercicio
   const exs = exercisesOf(ctx);
@@ -135,6 +197,8 @@ export function render(ctx) {
     <div class="card"><div class="ch"><h2>Peso</h2><button class="method" data-fx style="cursor:pointer">${icon.info}Cómo se calcula</button></div>
       ${weightChart}
       <div class="legend"><span><i class="dot" style="background:var(--dot)"></i>Diario</span><span><i style="background:var(--accent)"></i>Tendencia</span><span><i style="background:var(--accent-band);height:8px"></i>±1σ</span>${proj.length ? '<span><i style="background:repeating-linear-gradient(90deg,var(--accent) 0 3px,transparent 3px 6px)"></i>Previsión</span>' : ''}${events.length ? '<span><i class="dot" style="background:var(--amber)"></i>Cambio de plan</span>' : ''}</div></div>
+    ${energyCard}
+    ${balance30}
     ${energyChart ? `<div class="card"><div class="ch"><h2>Gasto vs ingesta</h2></div>${energyChart}
       <div class="legend"><span><i style="background:var(--blue)"></i>Gasto estimado</span><span><i style="background:var(--amber)"></i>Ingesta media 7 días${L.tdeeAssumedShare > 0.5 ? ' (según plan)' : ''}</span></div></div>` : ''}
     <div class="card"><div class="ch"><h2>Medidas</h2><div class="seg" id="compSeg" style="width:180px"><button data-v="waist" class="${st.comp === 'waist' ? 'on' : ''}">Cintura</button><button data-v="sum" class="${st.comp === 'sum' ? 'on' : ''}">Σ pliegues</button></div></div>
@@ -143,7 +207,8 @@ export function render(ctx) {
     ${comp}
     ${volume}
     ${strength}
-    ${photos}`;
+    ${photos}
+    ${consistency}`;
 }
 
 export function bind(root, ctx) {
@@ -152,6 +217,14 @@ export function bind(root, ctx) {
   bindSeg(root, '#rangeSeg', (v) => { st.range = +v; ctx.render(); });
   bindSeg(root, '#compSeg', (v) => { st.comp = v; ctx.render(); });
   bindSeg(root, '#poseSeg', (v) => { st.pose = v; ctx.render(); });
+  bindSeg(root, '#phMode', (v) => { st.phMode = v; ctx.render(); });
+  const c2 = $('#cmp2', root);
+  if (c2?.classList.contains('slide')) {
+    const move = (e) => { const r = c2.getBoundingClientRect(); st.px = Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100)); c2.style.setProperty('--x', `${st.px}%`); };
+    c2.addEventListener('pointerdown', (e) => { c2.setPointerCapture(e.pointerId); move(e); c2.onpointermove = move; });
+    c2.addEventListener('pointerup', () => { c2.onpointermove = null; });
+  }
+  $('#phO', root)?.addEventListener('input', (e) => { st.po = +e.target.value; c2?.style.setProperty('--o', st.po / 100); });
   $('#phA', root)?.addEventListener('change', (e) => { st.a = e.target.value; ctx.render(); });
   $('#phB', root)?.addEventListener('change', (e) => { st.b = e.target.value; ctx.render(); });
   $$('[data-fx]', root).forEach((b) => b.addEventListener('click', () => formulasSheet(ctx)));

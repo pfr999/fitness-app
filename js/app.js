@@ -147,7 +147,6 @@ function render() {
   const head = tab === 'hoy' ? hoy.dayTitle(ctx) : { title: TITLES[tab], eyebrow: fmtLong(todayISO()) };
   $('#title').textContent = head.title;
   $('#eyebrow').textContent = head.eyebrow;
-  $('#calBtn').hidden = tab !== 'hoy';
   const v = currentPlan(ctx.store.get(FILES.plan));
   const phase = [v?.phase && `Fase ${v.phase}`, v?.micro && `Micro ${v.micro}`, `Semana ${isoWeek(todayISO())}`].filter(Boolean).join(' · ');
   $('#phase').hidden = false;

@@ -91,10 +91,24 @@ son opcionales y se añaden solo si no exigen infraestructura.
   la semana que terminó el domingo. De lunes a miércoles la pantalla Semana muestra la semana por cerrar.
 - El botón «atrás» del móvil navega dentro de la app (hoja → paso/subpestaña → pestaña).
 
-## Ideas en cola (sin implementar)
-Pedidas por el usuario; se diseñan juntas cuando toque.
+## Ideas pedidas (hechas en v1.0–v1.3)
 - **Ir a un día concreto:** icono de calendario para saltar a cualquier fecha y ver qué se hizo
   (comidas, entreno, peso, notas), sin ir día a día.
 - **«Mis alimentos» explícito al añadir comida:** un apartado propio con los alimentos de siempre
   («sota, caballo y rey»: ~10 que dan adherencia) y guardar uno ahí en un toque. Todo lo que se repite
   debe costar lo mínimo (comidas guardadas, repetir de otro día…).
+
+## v1 (sept. 2026): lo que cambió
+Ver `docs/05-investigacion-apps.md` para el porqué.
+- **Hoy:** tira de la semana con el estado de cada día (deslizar = día; en la tira = semana), icono de
+  calendario (mes con estado, entrenos y controles; atajos Hoy/Ayer/−7), anillos de kcal y proteína, peso
+  de tendencia y una frase del día.
+- **Comidas:** «Sueles poner en…», Mis alimentos (⭐, con cantidad), comidas guardadas, recientes,
+  bandeja con «cómo queda el día», última cantidad y habituales, calculadora inversa, añadido rápido,
+  menú ⋯ (copiar a hoy/mañana/otro día, guardar, renombrar, borrar), copiar el día de ayer.
+- **Entreno:** descanso automático, pantalla encendida, «Antes» por serie, objetivo en verde, RPE con
+  botones, W de calentamiento, récords por reps, nota fija y descanso por ejercicio, cambiar ejercicio
+  solo hoy o en la rutina.
+- **Progreso:** gasto con confianza y porqué, balance de 30 días, línea de objetivo, fotos lado a lado /
+  deslizar / superponer, constancia de 26 semanas.
+- **Semana:** control rápido de 3 pasos cuando no hay incidencias.
