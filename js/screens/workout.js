@@ -69,6 +69,10 @@ export function render(ctx) {
   const days = v?.routine?.days || [];
   const day = ctx.store.day(date);
   const exs = exercisesOf(ctx);
+  // día marcado como descanso: ni pestañas de días ni ejercicios, solo el aviso y la forma de quitarlo
+  if (day.trained === false) return `<div class="card rest-day"><div class="ch"><h2>Día de descanso</h2><span class="badge n">Descanso</span></div>
+      <div class="muted small" style="margin:-4px 0 12px">Este día está marcado como descanso. Si lo marcaste por error o al final entrenas, quítalo y apunta la sesión.</div>
+      <button class="btn secondary" id="unRest">Quitar descanso</button></div>`;
   if (!days.length && !day.session?.sets?.length) return `<div class="card empty"><b>Sin rutina</b>Añádela en Plan → Rutina.</div>`;
   const sel = ctx.state.trainDay && days.some((d) => d.name === ctx.state.trainDay) ? ctx.state.trainDay : day.session?.day || suggestedDay(ctx, date, days);
   const rd = days.find((d) => d.name === sel) || days[0] || { name: 'Sesión', items: [] };
@@ -156,7 +160,7 @@ export function render(ctx) {
       <button class="btn secondary sm" id="addExtra" style="width:100%;margin-top:10px">${icon.plus} Ejercicio extra</button>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
         <button class="btn ${trained ? 'secondary' : 'primary'}" id="sessDone">${trained ? 'Sesión hecha ✓' : 'Sesión hecha'}</button>
-        <button class="btn secondary" id="sessRest">Hoy descanso</button>
+        <button class="btn secondary" id="sessRest">Marcar descanso</button>
       </div>
     </div>`;
 }
@@ -164,6 +168,12 @@ export function render(ctx) {
 export function bind(root, ctx) {
   const date = ctx.state.date;
   const exs = exercisesOf(ctx);
+  $('#unRest', root)?.addEventListener('click', () => {
+    // vuelve a «sin marcar»: la rutina aparece con el día sugerido
+    ctx.store.updateDay(date, (d) => { delete d.trained; }, `Entreno ${fmtShort(date)}: quita descanso`);
+    ctx.state.trainDay = null;
+    toast('Descanso quitado'); ctx.render();
+  });
   const rdName = () => $('#trainDays button.on', root)?.dataset.v || ctx.store.day(date).session?.day || 'Sesión';
   bindSeg(root, '#trainDays', (v) => { ctx.state.trainDay = v; ctx.render(); });
   $$('[data-toggle]', root).forEach((b) => b.addEventListener('click', () => {
@@ -305,7 +315,7 @@ export function bind(root, ctx) {
     toast(`${name}: hecha`); ctx.render();
   });
   $('#sessRest', root)?.addEventListener('click', async () => {
-    if ((ctx.store.day(date).session?.sets || []).length && !(await ask({ title: '¿Marcar descanso?', text: 'Hay series apuntadas hoy. Se borrarán.', ok: 'Borrar y marcar', danger: true }))) return;
+    if ((ctx.store.day(date).session?.sets || []).length && !(await ask({ title: '¿Marcar descanso?', text: 'Hay series apuntadas este día. Se borrarán.', ok: 'Borrar y marcar', danger: true }))) return;
     ctx.store.updateDay(date, (d) => { d.trained = false; delete d.session; }, `Descanso ${fmtShort(date)}`);
     toast('Día de descanso'); ctx.render();
   });
